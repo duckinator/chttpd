@@ -16,6 +16,13 @@ static int PORT = 8080;
 
 static int done = false;
 void prepare_to_exit(int _signal) {
+    if (done) {
+        puts("Received Ctrl-C twice; exiting immediately!");
+        exit(EXIT_FAILURE);
+    }
+
+    puts("Handling remaining connections, then exiting.");
+    puts("Press Ctrl-C again to exit immediately.");
     done = true;
 }
 
