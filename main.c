@@ -132,7 +132,7 @@ int main(int argc, char *argv[]) {
             }
 
             if (server_fd == events[i].data.fd) {
-                puts("Handling server socket.");
+                //puts("Handling server socket.");
                 while (true) {
                     int client_fd = accept(server_fd, NULL, NULL);
                     if (client_fd == -1) {
@@ -154,7 +154,7 @@ int main(int argc, char *argv[]) {
                 continue;
             }
 
-            puts("Handling client socket.");
+            //puts("Handling client socket.");
             while (true) {
                 char buf[513] = {0};
                 ssize_t count = read(events[i].data.fd, buf, sizeof buf - 1);
@@ -163,10 +163,16 @@ int main(int argc, char *argv[]) {
                 char *method = NULL;
                 char *path = NULL;
                 // e.g. "GET <path>"
-                if (sscanf(buf, "%ms %ms", &method, &path) == EOF) {
-                    perror("sscanf");
-                } else {
-                    printf("path = %s\n", path);
+                int scan_results = sscanf(buf, "%ms %ms", &method, &path);
+                if (scan_results == 1) {
+                    free(method);
+                    method = NULL;
+                    scan_results -= 1;
+                }
+
+                if (count == EOF) {
+                    close(events[i].data.fd);
+                    break;
                 }
 
                 if (count == -1 && errno != EAGAIN) {
@@ -182,10 +188,18 @@ int main(int argc, char *argv[]) {
                 }
 
                 if (path) { // if we have the PATH to return.
-                    puts("    Sending response!");
+                    //puts("    Sending response!");
                     char *response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 37\r\nConnection: close\r\n\r\n<!doctype html>\r\n<p>hello, world!</p>";
                     send_response(events[i].data.fd, response);
                     break;
+                }
+
+                if (method != NULL) {
+                    free(method);
+                }
+
+                if (path != NULL) {
+                    free(path);
                 }
             } // while (true)
         }
