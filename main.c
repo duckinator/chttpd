@@ -44,7 +44,8 @@ int server_socket(void) {
         return -1;
     }
 
-
+    // Mark address as reusable to avoid problems if client sockets aren't
+    // all closed at exit.
     int optval = 1;
     if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(int))) {
         perror("setsockopt");
@@ -181,12 +182,6 @@ int main(int argc, char *argv[]) {
                 }
             } // while (true)
         }
-    }
-
-    puts("Marking address as reusable.");
-    int optval = 1;
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(int))) {
-        perror("setsockopt");
     }
 
     puts("Closing server socket.");
