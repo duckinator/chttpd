@@ -75,6 +75,12 @@ int server_socket(void) {
     return server_fd;
 }
 
+void send_response(int fd, char *response) {
+    size_t length = strlen(response);
+    if (send(fd, response, length, 0) == -1)
+        perror("send");
+    close(fd);
+}
 
 int main(int argc, char *argv[]) {
     for (size_t i = 0; i < argc; i++)
@@ -102,7 +108,6 @@ int main(int argc, char *argv[]) {
     watch_socket(epoll_fd, server_fd);
     puts("Watching server_fd.");
     while (!done) {
-        puts("epoll_wait()...");
         int num_events = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
         if (num_events < 0) {
             perror("epoll_wait");
@@ -110,22 +115,18 @@ int main(int argc, char *argv[]) {
         }
 
         for (size_t i = 0; i < num_events; i++) {
-            printf("  Handling event %zu of %i\n", i + 1, num_events);
             if ((events[i].events & EPOLLERR) ||
                 (events[i].events & EPOLLHUP) ||
                 (!(events[i].events & EPOLLIN))) {
-                fprintf(stderr, "!! epoll error\n");
                 perror("epoll_wait");
                 close(events[i].data.fd);
                 continue;
             }
 
             if (server_fd == events[i].data.fd) {
-                printf("  Handling server socket.\n");
+                puts("Handling server socket.");
                 while (true) {
-                    printf("    accept()...\n");
                     int client_fd = accept(server_fd, NULL, NULL);
-                    printf("    got client_fd: %i\n", client_fd);
                     if (client_fd == -1) {
                         // EAGAIN/EWOULDBLOCK aren't actual errors, so
                         // be quiet about it.
@@ -137,7 +138,7 @@ int main(int argc, char *argv[]) {
                     if (fcntl(client_fd, F_SETFL, O_NONBLOCK) == -1) {
                         perror("fcntl");
                         close(client_fd);
-                        continue;
+                        break;
                     }
 
                     watch_socket(epoll_fd, client_fd);
@@ -145,32 +146,37 @@ int main(int argc, char *argv[]) {
                 continue;
             }
 
-            puts("  Handling client socket.");
+            puts("Handling client socket.");
             while (true) {
                 char buf[513] = {0};
-                puts("    Reading...");
                 ssize_t count = read(events[i].data.fd, buf, sizeof buf - 1);
                 buf[512] = '\0';
-                printf("    Read %zi bytes.\n", count);
 
-                // read() failed
-                if (count == -1) {
-                    //perror("client read()");
-                    if (errno != EAGAIN) {
-                        perror("read");
-                        close(events[i].data.fd);
-                        break;
-                    }
+                char *method = NULL;
+                char *path = NULL;
+                // e.g. "GET <path>"
+                if (sscanf(buf, "%ms %ms", &method, &path) == EOF) {
+                    perror("sscanf");
+                } else {
+                    printf("path = %s\n", path);
                 }
 
-                // there's nothing left to read.
-                if (count <= 0) {
+                if (count == -1 && errno != EAGAIN) {
+                    perror("read");
+                    close(events[i].data.fd);
+                    break;
+                }
+
+                if (method && (strncmp(method, "GET", 4) != 0)) {
+                    char *response = "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 32\r\nAllow: GET\r\n\r\nOnly GET requests are allowed.\r\n";
+                    send_response(events[i].data.fd, response);
+                    break;
+                }
+
+                if (path) { // if we have the PATH to return.
                     puts("    Sending response!");
                     char *response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 37\r\nConnection: close\r\n\r\n<!doctype html>\r\n<p>hello, world!</p>";
-                    size_t length = strlen(response);
-                    if (send(events[i].data.fd, response, length, 0) == -1)
-                        perror("send");
-                    close(events[i].data.fd);
+                    send_response(events[i].data.fd, response);
                     break;
                 }
             } // while (true)
