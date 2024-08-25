@@ -44,6 +44,13 @@ int server_socket(void) {
         return -1;
     }
 
+
+    int optval = 1;
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(int))) {
+        perror("setsockopt");
+    }
+
+
     if (fcntl(server_fd, F_SETFL, O_NONBLOCK) == -1) {
         perror("fcntl");
         close(server_fd);
@@ -122,7 +129,7 @@ int main(int argc, char *argv[]) {
                     if (client_fd == -1) {
                         // EAGAIN/EWOULDBLOCK aren't actual errors, so
                         // be quiet about it.
-                        //if ((errno != EAGAIN) && (errno != EWOULDBLOCK))
+                        if ((errno != EAGAIN) && (errno != EWOULDBLOCK))
                             perror("accept");
                         break;
                     }
@@ -140,23 +147,24 @@ int main(int argc, char *argv[]) {
 
             puts("  Handling client socket.");
             while (true) {
-                char buf[512];
+                char buf[513] = {0};
                 puts("    Reading...");
-                ssize_t count = read(events[i].data.fd, buf, sizeof buf);
-                printf("    Read %zu bytes.\n", count);
+                ssize_t count = read(events[i].data.fd, buf, sizeof buf - 1);
+                buf[512] = '\0';
+                printf("    Read %zi bytes.\n", count);
 
                 // read() failed
                 if (count == -1) {
-                    perror("client read()");
+                    //perror("client read()");
                     if (errno != EAGAIN) {
                         perror("read");
                         close(events[i].data.fd);
+                        break;
                     }
-                    break;
                 }
 
                 // there's nothing left to read.
-                if (count == 0) {
+                if (count <= 0) {
                     puts("    Sending response!");
                     char *response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 37\r\nConnection: close\r\n\r\n<!doctype html>\r\n<p>hello, world!</p>";
                     size_t length = strlen(response);
@@ -175,8 +183,6 @@ int main(int argc, char *argv[]) {
         perror("setsockopt");
     }
 
-    // Closing the server socket will cause the main event loop
-    // to eventually terminate.
     puts("Closing server socket.");
     if (close(server_fd)) {
         perror("close");
