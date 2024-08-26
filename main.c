@@ -164,38 +164,26 @@ int main(int argc, char *argv[]) {
                 char *path = NULL;
                 // e.g. "GET <path>"
                 int scan_results = sscanf(buf, "%ms %ms", &method, &path);
-                if (scan_results == 1) {
-                    free(method);
-                    method = NULL;
-                    scan_results -= 1;
-                }
 
-                if (count == EOF) {
+                if (count == -1 || count == EOF) {
+                    if (count == -1 && errno != EAGAIN && errno != 0) {
+                        perror("read");
+                    }
                     close(events[i].data.fd);
                     free(method);
                     free(path);
                     break;
                 }
 
-                if (count == -1 && errno != EAGAIN) {
-                    perror("read");
-                    close(events[i].data.fd);
-                    free(method);
-                    free(path);
-                    break;
-                }
-
-                if (method && (strncmp(method, "GET", 4) != 0)) {
+                if (scan_results < 2) {
+                    // Nothing to do.
+                } else if (strncmp(method, "GET", 4) != 0) {
+                    // Non-GET requests get a 405 error.
                     char *response = "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 32\r\nAllow: GET\r\n\r\nOnly GET requests are allowed.\r\n";
                     send_response(events[i].data.fd, response);
-                    free(method);
-                    free(path);
                     close(events[i].data.fd);
-                    break;
-                }
-
-                if (path) { // if we have the PATH to return.
-                    //puts("    Sending response!");
+                } else if (path) {
+                    // GET request.
                     char *response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 37\r\nConnection: close\r\n\r\n<!doctype html>\r\n<p>hello, world!</p>";
                     send_response(events[i].data.fd, response);
                 }
