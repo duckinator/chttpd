@@ -1,14 +1,14 @@
-#include <arpa/inet.h>  // htons()
+#include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <stdio.h>      // for printf() and friends
-#include <unistd.h>     // for close()
 #include <signal.h>
-#include <sys/epoll.h>  // for epoll_*
-#include <sys/socket.h> // for... socket... stuff...
-#include <stdlib.h>     // for EXIT_FAILURE, EXIT_SUCCESS
-#include <string.h>     // strlen()
 #include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/epoll.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #define MAX_EVENTS 10
 static int BACKLOG = 50;
