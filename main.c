@@ -7,7 +7,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/epoll.h>
+#include <sys/sendfile.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #define MAX_EVENTS 10
@@ -83,11 +85,12 @@ int server_socket(void) {
     return server_fd;
 }
 
-void send_response(int fd, char *response) {
+ssize_t send_chunk(int fd, char *response) {
     size_t length = strlen(response);
-    if (send(fd, response, length, 0) == -1)
+    ssize_t ret = send(fd, response, length, 0);
+    if (ret == -1)
         perror("send");
-    close(fd);
+    return ret;
 }
 
 int main(int argc, char *argv[]) {
@@ -180,12 +183,46 @@ int main(int argc, char *argv[]) {
                 } else if (strncmp(method, "GET", 4) != 0) {
                     // Non-GET requests get a 405 error.
                     char *response = "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 32\r\nAllow: GET\r\n\r\nOnly GET requests are allowed.\r\n";
-                    send_response(events[i].data.fd, response);
+                    send_chunk(events[i].data.fd, response);
                     close(events[i].data.fd);
                 } else if (path) {
                     // GET request.
-                    char *response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 37\r\nConnection: close\r\n\r\n<!doctype html>\r\n<p>hello, world!</p>";
-                    send_response(events[i].data.fd, response);
+                    int fd = events[i].data.fd;
+
+                    char *filename = "site/hello.html";
+
+                    struct stat st;
+                    if (stat(filename, &st)) {
+                        perror("stat");
+                        send_chunk(fd, "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: 6\r\n\r\nheck\r\n");
+                        goto done; // fixme
+                    }
+                    uint64_t length = (uint64_t)st.st_size;
+
+                    send_chunk(fd, "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: ");
+                    if (true) {
+                        send_chunk(fd, "text/html");
+                    }
+                    send_chunk(fd, "\r\nContent-Length: ");
+
+                    char length_buf[11] = {0}; // if you need >1GB, get a real server.
+                    snprintf(length_buf, 10, "%lu", length);
+                    length_buf[10] = '\0';
+                    send_chunk(fd, length_buf);
+
+                    send_chunk(fd, "\r\n\r\n");
+
+                    int file_fd = open(filename, O_RDONLY);
+                    if (file_fd == -1)
+                        perror("open");
+
+                    sendfile(fd, file_fd, NULL, length);
+
+                    close(file_fd);
+
+                    done: // fixme
+
+                    close(fd);
                 }
 
                 free(method);
