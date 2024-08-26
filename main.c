@@ -172,18 +172,25 @@ int main(int argc, char *argv[]) {
 
                 if (count == EOF) {
                     close(events[i].data.fd);
+                    free(method);
+                    free(path);
                     break;
                 }
 
                 if (count == -1 && errno != EAGAIN) {
                     perror("read");
                     close(events[i].data.fd);
+                    free(method);
+                    free(path);
                     break;
                 }
 
                 if (method && (strncmp(method, "GET", 4) != 0)) {
                     char *response = "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 32\r\nAllow: GET\r\n\r\nOnly GET requests are allowed.\r\n";
                     send_response(events[i].data.fd, response);
+                    free(method);
+                    free(path);
+                    close(events[i].data.fd);
                     break;
                 }
 
@@ -191,29 +198,19 @@ int main(int argc, char *argv[]) {
                     //puts("    Sending response!");
                     char *response = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 37\r\nConnection: close\r\n\r\n<!doctype html>\r\n<p>hello, world!</p>";
                     send_response(events[i].data.fd, response);
-                    break;
                 }
 
-                if (method != NULL) {
-                    free(method);
-                }
-
-                if (path != NULL) {
-                    free(path);
-                }
+                free(method);
+                free(path);
             } // while (true)
         }
     }
 
     puts("Closing server socket.");
-    if (close(server_fd)) {
-        perror("close");
-    }
+    close(server_fd);
 
     puts("Closing epoll socket.");
-    if (close(epoll_fd)) {
-        perror("close(epoll_fd)");
-    }
+    close(epoll_fd);
 
     return EXIT_SUCCESS;
 }
