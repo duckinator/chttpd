@@ -193,9 +193,17 @@ int main(int argc, char *argv[]) {
 
                     char *filename = "site/hello.html";
 
+                    int file_fd = open(filename, O_RDONLY);
+                    if (file_fd == -1) {
+                        perror("open");
+                        send_chunk(fd, err500);
+                        close(fd);
+                        continue;
+                    }
+
                     struct stat st;
-                    if (stat(filename, &st)) {
-                        perror("stat");
+                    if (fstat(file_fd, &st)) {
+                        perror("fstat");
                         send_chunk(fd, err500);
                         close(fd);
                         continue;
@@ -214,10 +222,6 @@ int main(int argc, char *argv[]) {
                     send_chunk(fd, length_buf);
 
                     send_chunk(fd, "\r\n\r\n");
-
-                    int file_fd = open(filename, O_RDONLY);
-                    if (file_fd == -1)
-                        perror("open");
 
                     sendfile(fd, file_fd, NULL, length);
 
