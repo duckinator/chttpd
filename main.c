@@ -12,6 +12,9 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+static char err405[] = "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 32\r\nAllow: GET\r\n\r\nOnly GET requests are allowed.\r\n";
+static char err500[] = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: 6\r\n\r\nheck\r\n";
+
 #define MAX_EVENTS 10
 static int BACKLOG = 50;
 static int PORT = 8080;
@@ -182,8 +185,7 @@ int main(int argc, char *argv[]) {
                     // Nothing to do.
                 } else if (strncmp(method, "GET", 4) != 0) {
                     // Non-GET requests get a 405 error.
-                    char *response = "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 32\r\nAllow: GET\r\n\r\nOnly GET requests are allowed.\r\n";
-                    send_chunk(events[i].data.fd, response);
+                    send_chunk(events[i].data.fd, err405);
                     close(events[i].data.fd);
                 } else if (path) {
                     // GET request.
@@ -194,8 +196,9 @@ int main(int argc, char *argv[]) {
                     struct stat st;
                     if (stat(filename, &st)) {
                         perror("stat");
-                        send_chunk(fd, "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: 6\r\n\r\nheck\r\n");
-                        goto done; // fixme
+                        send_chunk(fd, err500);
+                        close(fd);
+                        continue;
                     }
                     uint64_t length = (uint64_t)st.st_size;
 
@@ -219,9 +222,6 @@ int main(int argc, char *argv[]) {
                     sendfile(fd, file_fd, NULL, length);
 
                     close(file_fd);
-
-                    done: // fixme
-
                     close(fd);
                 }
 
