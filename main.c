@@ -222,22 +222,25 @@ int main(int argc, char *argv[]) {
                         close(fd);
                         continue;
                     }
-                    uint64_t length = (uint64_t)st.st_size;
+                    uint64_t content_length = (uint64_t)st.st_size;
 
-                    send_chunk(fd, "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: ");
-                    if (true) {
-                        send_chunk(fd, "text/html");
-                    }
-                    send_chunk(fd, "\r\nContent-Length: ");
+                    // TODO: Actually determine content type.
+                    char *content_type = "text/html";
 
-                    char length_buf[11] = {0}; // if you need >1GB, get a real server.
-                    snprintf(length_buf, 10, "%lu", length);
-                    length_buf[10] = '\0';
-                    send_chunk(fd, length_buf);
+                    char headers[256] = {0};
 
-                    send_chunk(fd, "\r\n\r\n");
+                    snprintf(headers, 256,
+                            "HTTP/1.1 200 OK\r\n" \
+                            "Content-Type: %s\r\n" \
+                            "Content-Length: %lu\r\n" \
+                            "Connection: close\r\n" \
+                            "Server: chttpd <https://github.com/duckinator/chttpd>\r\n" \
+                            "\r\n",
+                            content_type, content_length);
 
-                    sendfile(fd, file_fd, NULL, length);
+                    send_chunk(fd, headers);
+
+                    sendfile(fd, file_fd, NULL, content_length);
 
                     close(file_fd);
                     close(fd);
