@@ -1,9 +1,9 @@
-CFLAGS := -std=c2x -Wall -Werror -pedantic-errors -D_POSIX_C_SOURCE=200809L
+CFLAGS := -std=c2x -Wall -Werror -pedantic-errors -D_POSIX_C_SOURCE=200809L -g
 EXE := ./chttpd
 
 all: ${EXE}
 
-${EXE}:
+${EXE}: main.c
 	clang ${CFLAGS} main.c -o ${EXE}
 
 run: ${EXE}
