@@ -37,6 +37,9 @@ void register_signal_handler(void) {
     sigemptyset(&sigact.sa_mask);
     sigact.sa_flags = 0;
     sigaction(SIGINT, &sigact, (struct sigaction *)NULL);
+
+    sigact.sa_handler = SIG_IGN;
+    sigaction(SIGPIPE, &sigact, (struct sigaction *)NULL);
 }
 
 void watch_socket(int epoll_fd, int sock_fd) {
@@ -90,9 +93,12 @@ int server_socket(void) {
 
 ssize_t send_chunk(int fd, char *response) {
     size_t length = strlen(response);
-    ssize_t ret = send(fd, response, length, 0);
-    if (ret == -1)
+    ssize_t ret = send(fd, response, length, MSG_NOSIGNAL);
+    if (ret == -1) {
         perror("send");
+        if (errno == EPIPE)
+            close(fd);
+    }
     return ret;
 }
 
@@ -122,11 +128,13 @@ int main(int argc, char *argv[]) {
     watch_socket(epoll_fd, server_fd);
     puts("Watching server_fd.");
     while (!done) {
+        puts("epoll_wait()");
         int num_events = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
         if (num_events < 0) {
             perror("epoll_wait");
             break;
         }
+        printf("num_events = %i\n", num_events);
 
         for (size_t i = 0; i < num_events; i++) {
             if ((events[i].events & EPOLLERR) ||
@@ -138,9 +146,10 @@ int main(int argc, char *argv[]) {
             }
 
             if (server_fd == events[i].data.fd) {
-                //puts("Handling server socket.");
+                puts("Handling server socket.");
                 while (true) {
                     int client_fd = accept(server_fd, NULL, NULL);
+                    puts("accept()");
                     if (client_fd == -1) {
                         // EAGAIN/EWOULDBLOCK aren't actual errors, so
                         // be quiet about it.
@@ -160,26 +169,31 @@ int main(int argc, char *argv[]) {
                 continue;
             }
 
-            //puts("Handling client socket.");
+            puts("Handling client socket.");
             while (true) {
                 char buf[513] = {0};
+                printf("\nread(%i, buf, %lu) == ", events[i].data.fd, sizeof buf - 1);
                 ssize_t count = read(events[i].data.fd, buf, sizeof buf - 1);
+                printf("%li\n", count);
                 buf[512] = '\0';
-
-                char *method = NULL;
-                char *path = NULL;
-                // e.g. "GET <path>"
-                int scan_results = sscanf(buf, "%ms %ms", &method, &path);
 
                 if (count == -1 || count == EOF) {
                     if (count == -1 && errno != EAGAIN && errno != 0) {
                         perror("read");
                     }
                     close(events[i].data.fd);
-                    free(method);
-                    free(path);
                     break;
                 }
+
+                if (count == 0) {
+                    fputs("warning: read zero bytes?\n", stderr);
+                    close(events[i].data.fd);
+                }
+
+                char *method = NULL;
+                char *path = NULL;
+                // e.g. "GET <path>"
+                int scan_results = sscanf(buf, "%ms %ms", &method, &path);
 
                 if (scan_results < 2) {
                     // Nothing to do.
