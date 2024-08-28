@@ -12,6 +12,16 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#define LOG(level, msg) printf(level " %s:%d:%s(): %s\n", __FILE__, __LINE__, __func__, msg)
+#define INFO(msg)   LOG("INFO ", msg)
+
+#ifdef DEBUG_MODE
+#   define DEBUGF(fmt, ...) fprintf(stderr, level " %s:%d:%s(): " fmt, __FILE__, __LINE__, __func__, __VA_ARGS__)
+#else
+#   define DEBUGF(fmt, ...) /* DEBUGF() */
+#endif
+#define DEBUG(msg) DEBUGF("%s", msg)
+
 static char err405[] = "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 32\r\nAllow: GET\r\n\r\nOnly GET requests are allowed.\r\n";
 static char err500[] = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: 6\r\n\r\nheck\r\n";
 
@@ -108,7 +118,7 @@ int main(int argc, char *argv[]) {
     puts("");
 
     int epoll_fd = epoll_create1(0);
-    puts("Got epoll_fd.");
+    INFO("Got epoll_fd.");
 
     if (epoll_fd == -1) {
         perror("epoll_create1");
@@ -119,22 +129,22 @@ int main(int argc, char *argv[]) {
     if (server_fd == -1) {
         return EXIT_FAILURE;
     }
-    puts("Got server socket.");
+    INFO("Got server socket.");
 
     register_signal_handler();
-    puts("Registered signal handlers.");
+    INFO("Registered signal handlers.");
 
     struct epoll_event events[MAX_EVENTS] = {0};
     watch_socket(epoll_fd, server_fd);
-    puts("Watching server_fd.");
+    INFO("Watching server_fd.");
     while (!done) {
-        puts("epoll_wait()");
+        DEBUG("epoll_wait()");
         int num_events = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
         if (num_events < 0) {
             perror("epoll_wait");
             break;
         }
-        printf("num_events = %i\n", num_events);
+        DEBUGF("num_events = %i\n", num_events);
 
         for (size_t i = 0; i < num_events; i++) {
             if ((events[i].events & EPOLLERR) ||
@@ -146,10 +156,10 @@ int main(int argc, char *argv[]) {
             }
 
             if (server_fd == events[i].data.fd) {
-                puts("Handling server socket.");
+                DEBUG("Handling server socket.");
                 while (true) {
                     int client_fd = accept(server_fd, NULL, NULL);
-                    puts("accept()");
+                    DEBUG("accept()");
                     if (client_fd == -1) {
                         // EAGAIN/EWOULDBLOCK aren't actual errors, so
                         // be quiet about it.
@@ -169,16 +179,21 @@ int main(int argc, char *argv[]) {
                 continue;
             }
 
-            puts("Handling client socket.");
+            DEBUG("Handling client socket.");
             while (true) {
                 char buf[513] = {0};
-                printf("\nread(%i, buf, %lu) == ", events[i].data.fd, sizeof buf - 1);
+                DEBUGF("\nread(%i, buf, %lu) == ", events[i].data.fd, sizeof buf - 1);
                 ssize_t count = read(events[i].data.fd, buf, sizeof buf - 1);
-                printf("%li\n", count);
+                DEBUGF("%li\n", count);
                 buf[512] = '\0';
 
                 if (count == -1 || count == EOF) {
-                    if (count == -1 && errno != EAGAIN && errno != 0) {
+                    if (count == -1 && errno != 0 && errno != EAGAIN && errno != EBADF) {
+                        // if count == -1, read() failed.
+                        // we don't care about the following errno values:
+                        // - 0      (there was no error)
+                        // - EAGAIN ("resource temporarily unavailable"
+                        // - EBADF  ("bad file descriptor")
                         perror("read");
                     }
                     close(events[i].data.fd);
@@ -197,7 +212,7 @@ int main(int argc, char *argv[]) {
 
                 if (scan_results < 2) {
                     // Nothing to do.
-                } else if (strncmp(method, "GET", 4) != 0) {
+                } else if (method[0] != 'G' || method[1] != 'E' || method[2] != 'T' || method[3] != '\0') {
                     // Non-GET requests get a 405 error.
                     send_chunk(events[i].data.fd, err405);
                     close(events[i].data.fd);
@@ -252,10 +267,10 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    puts("Closing server socket.");
+    INFO("Closing server socket.");
     close(server_fd);
 
-    puts("Closing epoll socket.");
+    INFO("Closing epoll socket.");
     close(epoll_fd);
 
     return EXIT_SUCCESS;
