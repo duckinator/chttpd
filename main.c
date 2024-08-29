@@ -23,7 +23,7 @@
 #endif
 #define DEBUG(msg) DEBUGF("%s", msg)
 
-static char err405[] = "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 32\r\nAllow: GET\r\n\r\nOnly GET requests are allowed.\r\n";
+static char err405[] = "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 37\r\nAllow: GET\r\n\r\nOnly GET/HEAD requests are allowed.\r\n";
 static char err500[] = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: 6\r\n\r\nheck\r\n";
 
 #define MAX_EVENTS 10
@@ -211,14 +211,17 @@ int main(int argc, char *argv[]) {
                 // e.g. "GET <path>"
                 int scan_results = sscanf(buf, "%ms %ms", &method, &path);
 
+                bool is_get = method[0] == 'G' && method[1] == 'E' && method[2] == 'T' && method[3] == '\0';
+                bool is_head = method[0] == 'H' && method[1] == 'E' && method[2] == 'A' && method[3] == 'D' && method[4] == '\0';
+
                 if (scan_results < 2) {
                     // Nothing to do.
-                } else if (method[0] != 'G' || method[1] != 'E' || method[2] != 'T' || method[3] != '\0') {
-                    // Non-GET requests get a 405 error.
+                } else if (!is_get && !is_head) {
+                    // Non-GET/HEAD requests get a 405 error.
                     send_chunk(events[i].data.fd, err405);
                     close(events[i].data.fd);
                 } else if (path) {
-                    // GET request.
+                    // GET or HEAD request.
                     int fd = events[i].data.fd;
 
                     char *filename = "site/hello.html";
@@ -256,7 +259,10 @@ int main(int argc, char *argv[]) {
 
                     send_chunk(fd, headers);
 
-                    sendfile(fd, file_fd, NULL, content_length);
+                    // For HEAD requests, only return the headers.
+                    if (is_get) {
+                        sendfile(fd, file_fd, NULL, content_length);
+                    }
 
                     close(file_fd);
                     close(fd);
