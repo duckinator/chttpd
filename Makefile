@@ -6,10 +6,14 @@ all: ${EXE}
 ${EXE}: main.c
 	clang ${CFLAGS} main.c -o ${EXE}
 
+debug: ${EXE}
+	clang -DDEBUG_MODE=1 ${CFLAGS} main.c -o ${EXE}
+	${EXE}
+
 run: ${EXE}
 	${EXE}
 
 clean:
 	rm -f ${EXE}
 
-.PHONY: clean
+.PHONY: clean debug
