@@ -14,6 +14,7 @@
 
 #define LOG(level, msg) printf(level " %s:%d:%s(): %s\n", __FILE__, __LINE__, __func__, msg)
 #define INFO(msg)   LOG("INFO ", msg)
+#define WARN(msg)   LOG("WARN ", msg)
 
 #ifdef DEBUG_MODE
 #   define DEBUGF(fmt, ...) fprintf(stderr, level " %s:%d:%s(): " fmt, __FILE__, __LINE__, __func__, __VA_ARGS__)
@@ -201,7 +202,7 @@ int main(int argc, char *argv[]) {
                 }
 
                 if (count == 0) {
-                    fputs("warning: read zero bytes?\n", stderr);
+                    WARN("warning: read zero bytes?");
                     close(events[i].data.fd);
                 }
 
