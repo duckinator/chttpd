@@ -211,8 +211,8 @@ int main(int argc, char *argv[]) {
                 // e.g. "GET <path>"
                 int scan_results = sscanf(buf, "%ms %ms", &method, &path);
 
-                bool is_get = method[0] == 'G' && method[1] == 'E' && method[2] == 'T' && method[3] == '\0';
-                bool is_head = method[0] == 'H' && method[1] == 'E' && method[2] == 'A' && method[3] == 'D' && method[4] == '\0';
+                bool is_get = method && method[0] == 'G' && method[1] == 'E' && method[2] == 'T' && method[3] == '\0';
+                bool is_head = method && method[0] == 'H' && method[1] == 'E' && method[2] == 'A' && method[3] == 'D' && method[4] == '\0';
 
                 if (scan_results < 2) {
                     // Nothing to do.
