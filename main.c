@@ -30,7 +30,7 @@ static char err500[] = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text
 static int BACKLOG = 50;
 static int PORT = 8080;
 
-static int done = false;
+volatile sig_atomic_t done = 0;
 void prepare_to_exit(int _signal) {
     if (done) {
         puts("Received Ctrl-C twice; exiting immediately!");
@@ -39,7 +39,7 @@ void prepare_to_exit(int _signal) {
 
     puts("Handling remaining connections, then exiting.");
     puts("Press Ctrl-C again to exit immediately.");
-    done = true;
+    done = 1;
 }
 
 void register_signal_handler(void) {
