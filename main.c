@@ -90,10 +90,8 @@ void reroot(char *root) {
 
 int server_socket(void) {
     int server_fd = socket(AF_INET, SOCK_STREAM, 0);
-    if (server_fd == -1) {
-        perror("socket");
-        return -1;
-    }
+    if (server_fd == -1)
+        pabort("socket");
 
     // Mark address as reusable to avoid problems if client sockets aren't
     // all closed at exit.
@@ -106,7 +104,7 @@ int server_socket(void) {
     if (fcntl(server_fd, F_SETFL, O_NONBLOCK) == -1) {
         perror("fcntl");
         close(server_fd);
-        return -1;
+        exit(EXIT_FAILURE);
     }
 
     struct sockaddr_in server = {0};
@@ -114,15 +112,11 @@ int server_socket(void) {
     server.sin_addr.s_addr = INADDR_ANY;
     server.sin_port = htons(PORT);
 
-    if (bind(server_fd, (struct sockaddr*)&server, sizeof(server))) {
-        perror("bind");
-        return -1;
-    }
+    if (bind(server_fd, (struct sockaddr*)&server, sizeof(server)))
+        pabort("bind");
 
-    if (listen(server_fd, BACKLOG)) {
-        perror("listen");
-        return -1;
-    }
+    if (listen(server_fd, BACKLOG))
+        pabort("listen");
 
     return server_fd;
 }
@@ -142,10 +136,8 @@ int main(int argc, char *argv[]) {
     int epoll_fd = epoll_create1(0);
     INFO("Got epoll_fd.");
 
-    if (epoll_fd == -1) {
-        perror("epoll_create1");
-        return EXIT_FAILURE;
-    }
+    if (epoll_fd == -1)
+        pabort("epoll_create1");
 
     int server_fd = server_socket();
     if (server_fd == -1) {
