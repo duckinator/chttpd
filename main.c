@@ -1,16 +1,22 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
+//#include <linux/limits.h>
+#include <linux/sched.h>    // CLONE_* constants.
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+//#include <sched.h>
 #include <sys/epoll.h>
+//#include <sys/mman.h>
+#include <sys/mount.h>      // mount(), MS_* constants.
 #include <sys/sendfile.h>
 #include <sys/socket.h>
-#include <sys/stat.h>
-#include <unistd.h>
+#include <sys/stat.h>       // fstat(), struct stat.
+#include <sys/syscall.h>    // SYS_* constants.
+#include <unistd.h>         // syscall(), chroot(), maybe other things.
 
 #define LOG(level, msg) printf(level " %s:%d:%s(): %s\n", __FILE__, __LINE__, __func__, msg)
 #define INFO(msg)   LOG("INFO ", msg)
@@ -60,6 +66,32 @@ void watch_socket(int epoll_fd, int sock_fd) {
 
     if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sock_fd, &event)) {
         perror("epoll_ctl");
+    }
+}
+
+void reroot(char *root) {
+    INFO("Creating user and mount namespaces.");
+    if (syscall(SYS_unshare, CLONE_NEWUSER | CLONE_NEWNS)) {
+        perror("unshare");
+        exit(EXIT_FAILURE);
+    }
+
+    INFO("Creating bind mount for pivot_root().");
+    if (mount(root, root, NULL, MS_BIND | MS_PRIVATE, NULL)) {
+        perror("mount");
+        exit(EXIT_FAILURE);
+    }
+
+    INFO("Attempting pivot_root().");
+    if (syscall(SYS_pivot_root, root, root)) {
+        perror("pivot_root");
+        exit(EXIT_FAILURE);
+    }
+
+    INFO("Changing to new root directory.");
+    if (chdir("/")) {
+        perror("chdir");
+        exit(EXIT_FAILURE);
     }
 }
 
@@ -114,10 +146,6 @@ ssize_t send_chunk(int fd, char *response) {
 }
 
 int main(int argc, char *argv[]) {
-    for (size_t i = 0; i < argc; i++)
-        printf("%s ", argv[i]);
-    puts("");
-
     int epoll_fd = epoll_create1(0);
     INFO("Got epoll_fd.");
 
@@ -138,6 +166,10 @@ int main(int argc, char *argv[]) {
     struct epoll_event events[MAX_EVENTS] = {0};
     watch_socket(epoll_fd, server_fd);
     INFO("Watching server_fd.");
+
+    reroot("site");
+    INFO("Theoretically isolated ./site as process mount root.");
+
     while (!done) {
         DEBUG("epoll_wait()");
         int num_events = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
@@ -224,9 +256,7 @@ int main(int argc, char *argv[]) {
                     // GET or HEAD request.
                     int fd = events[i].data.fd;
 
-                    char *filename = "site/hello.html";
-
-                    int file_fd = open(filename, O_RDONLY);
+                    int file_fd = open(path, O_RDONLY);
                     if (file_fd == -1) {
                         perror("open");
                         send_chunk(fd, err500);
@@ -241,6 +271,44 @@ int main(int argc, char *argv[]) {
                         close(fd);
                         continue;
                     }
+
+                    if (S_ISDIR(st.st_mode)) {
+                        size_t size = strlen(path);
+
+                        // Redirect /:dir to /:dir/ so relative URLs behave.
+                        if (path[size - 1] != '/') {
+                            char headers[256] = {0};
+                            snprintf(headers, sizeof headers,
+                                    "HTTP/1.1 307 Temporary Redirect\r\n" \
+                                    "Location: %s/\r\n" \
+                                    "Content-Length: 0\r\n" \
+                                    "\r\n",
+                                    path);
+                            send_chunk(fd, headers);
+                            close(fd);
+                            continue;
+                        }
+
+                        // Return /:dir/index.html for /:dir.
+                        path = realloc(path, size + 12);
+                        strncpy(path + size, "index.html", 11);
+
+                        file_fd = open(path, O_RDONLY);
+                        if (file_fd == -1) {
+                            perror("open");
+                            send_chunk(fd, err500);
+                            close(fd);
+                            continue;
+                        }
+
+                        if (fstat(file_fd, &st)) {
+                            perror("fstat");
+                            send_chunk(fd, err500);
+                            close(fd);
+                            continue;
+                        }
+                    }
+
                     uint64_t content_length = (uint64_t)st.st_size;
 
                     // TODO: Actually determine content type.

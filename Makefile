@@ -1,4 +1,4 @@
-CFLAGS := -std=c2x -Wall -Werror -pedantic-errors -D_POSIX_C_SOURCE=200809L -g
+CFLAGS := -std=c2x -Wall -Werror -pedantic-errors -D_DEFAULT_SOURCE -g
 EXE := ./chttpd
 
 all: ${EXE}
