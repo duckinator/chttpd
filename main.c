@@ -265,10 +265,10 @@ int main(int argc, char *argv[]) {
                     int file_fd = -1;
                     struct stat st = {0};
 
-                    int status = open_and_fstat(path, &file_fd, &st);
+                    int error = open_and_fstat(path, &file_fd, &st);
 
                     size_t path_size = strlen(path);
-                    if (!status && S_ISDIR(st.st_mode)) {
+                    if (!error && S_ISDIR(st.st_mode)) {
                         // Redirect /:dir to /:dir/ so relative URLs behave.
                         if (path[path_size - 1] != '/') {
                             char headers[256] = {0};
@@ -283,26 +283,25 @@ int main(int argc, char *argv[]) {
                             continue;
                         }
 
-                        // Return /:dir/index.html for /:dir.
+                        // Return /:dir/index.html for /:dir/.
                         path = realloc(path, path_size + 12);
                         strncpy(path + path_size, "index.html", 11);
-                        path_size = strlen(path);
+                        path_size += 10;
 
-                        status = open_and_fstat(path, &file_fd, &st);
+                        error = open_and_fstat(path, &file_fd, &st);
                     }
 
-                    if (status == 404) {
+                    if (error == 404) {
                         send_chunk(fd, err404);
                         close(fd);
                         continue;
                     }
 
-                    if (status == 500) {
+                    if (error) {
                         send_chunk(fd, err500);
                         close(fd);
                         continue;
                     }
-
 
                     char *ext = NULL;
                     for (size_t i = 0; i < path_size; i++)
@@ -338,9 +337,8 @@ int main(int argc, char *argv[]) {
                     send_chunk(fd, headers);
 
                     // For HEAD requests, only return the headers.
-                    if (is_get) {
+                    if (is_get)
                         sendfile(fd, file_fd, NULL, content_length);
-                    }
 
                     close(file_fd);
                     close(fd);
