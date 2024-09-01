@@ -149,7 +149,7 @@ int open_and_fstat(char *path, int *fd, struct stat *st) {
     *fd = open(path, O_RDONLY);
     if (*fd == -1) {
         perror("open");
-        return 404;
+        return (errno == ENOENT) ? 404 : 500;
     }
 
     if (fstat(*fd, st)) {
