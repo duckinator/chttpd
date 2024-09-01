@@ -145,23 +145,6 @@ ssize_t send_chunk(int fd, char *response) {
     return ret;
 }
 
-int open_and_fstat(char *path, int *fd, struct stat *st) {
-    *fd = open(path, O_RDONLY);
-    if (*fd == -1) {
-        perror("open");
-        return (errno == ENOENT) ? 404 : 500;
-    }
-
-    if (fstat(*fd, st)) {
-        perror("fstat");
-        close(*fd);
-        return 500;
-    }
-
-    return 0;
-}
-
-
 int main(int argc, char *argv[]) {
     int epoll_fd = epoll_create1(0);
     INFO("Got epoll_fd.");
@@ -263,9 +246,6 @@ int main(int argc, char *argv[]) {
                     // GET or HEAD request.
                     int fd = events[i].data.fd;
 
-                    int file_fd = -1;
-                    struct stat st = {0};
-
                     size_t path_size = strlen(path);
 
                     bool ends_with_slash = path[path_size - 1] == '/';
@@ -276,10 +256,28 @@ int main(int argc, char *argv[]) {
                         path_size += 10;
                     }
 
-                    int error = open_and_fstat(path, &file_fd, &st);
+                    int file_fd = open(path, O_RDONLY); // Try to open path.
+                    if (file_fd == -1) { // If opening it failed.
+                        perror("open");
+                        if (errno == ENOENT) // No such path - return 404.
+                            send_chunk(fd, err404);
+                        else // All other errors - return 500.
+                            send_chunk(fd, err500);
+                        close(fd);
+                        continue;
+                    }
+
+                    struct stat st;
+                    if (fstat(file_fd, &st)) { // Needed for catching /:dir.
+                        perror("fstat");
+                        close(file_fd);
+                        send_chunk(fd, err500);
+                        close(fd);
+                        continue;
+                    }
 
                     // Redirect /:dir to /:dir/.
-                    if (!ends_with_slash && !error && S_ISDIR(st.st_mode)) {
+                    if (!ends_with_slash && S_ISDIR(st.st_mode)) {
                         char headers[256] = {0};
                         snprintf(headers, sizeof headers,
                                 "HTTP/1.1 307 Temporary Redirect\r\n" \
@@ -288,18 +286,6 @@ int main(int argc, char *argv[]) {
                                 "\r\n",
                                 path);
                         send_chunk(fd, headers);
-                        close(fd);
-                        continue;
-                    }
-
-                    if (error == 404) {
-                        send_chunk(fd, err404);
-                        close(fd);
-                        continue;
-                    }
-
-                    if (error) {
-                        send_chunk(fd, err500);
                         close(fd);
                         continue;
                     }
