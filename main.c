@@ -154,6 +154,7 @@ int open_and_fstat(char *path, int *fd, struct stat *st) {
 
     if (fstat(*fd, st)) {
         perror("fstat");
+        close(*fd);
         return 500;
     }
 
@@ -269,6 +270,7 @@ int main(int argc, char *argv[]) {
 
                     size_t path_size = strlen(path);
                     if (!error && S_ISDIR(st.st_mode)) {
+                        close(file_fd);
                         // Redirect /:dir to /:dir/ so relative URLs behave.
                         if (path[path_size - 1] != '/') {
                             char headers[256] = {0};
