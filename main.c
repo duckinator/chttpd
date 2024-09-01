@@ -44,10 +44,6 @@ char *exts[] = {
     ".woff\0    font/woff",
 };
 
-char *octet_stream = "application/octet-stream";
-
-
-
 #define MAX_EVENTS 10
 static int BACKLOG = 50;
 static int PORT = 8080;
@@ -306,23 +302,19 @@ int main(int argc, char *argv[]) {
                             continue;
                         }
                     }
-                    char *content_type = octet_stream;
 
                     char *ext = NULL;
                     for (size_t i = 0; i < path_size; i++)
                         if (path[i] == '.')
                             ext = path + i;
 
+                    char *content_type = "application/octet-stream";
                     if (ext) {
                         for (size_t i = 0; i < sizeof exts; i++) {
                             char *tmp = exts[i];
                             bool match = true;
-                            for (size_t j = 0; tmp[j]; j++) {
-                                if (tmp[j] != ext[j]) {
-                                    match = false;
-                                    break;
-                                }
-                            }
+                            for (size_t j = 0; tmp[j] && match; j++)
+                                match = tmp[j] == ext[j];
 
                             if (match) {
                                 content_type = exts[i] + EXT_OFFSET;
@@ -330,7 +322,6 @@ int main(int argc, char *argv[]) {
                             }
                         }
                     }
-                    printf("content_type = '%s'\n", content_type);
 
                     uint64_t content_length = (uint64_t)st.st_size;
                     char headers[256] = {0};
