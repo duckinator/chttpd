@@ -268,20 +268,20 @@ int main(int argc, char *argv[]) {
 
                     size_t path_size = strlen(path);
 
-                    int error = 1;
-                    // if the path ends with /, assume it's a directory.
-                    int isdir = path[path_size - 1] == '/';
+                    int error = 0;
 
-                    if (!isdir) {
+                    if (path[path_size - 1] == '/') {
+                        // Return /:dir/index.html for /:dir/.
+                        path = realloc(path, path_size + 12);
+                        strncpy(path + path_size, "index.html", 11);
+                        path_size += 10;
+
                         error = open_and_fstat(path, &file_fd, &st);
-                        isdir = !error && S_ISDIR(st.st_mode);
-                    }
+                    } else {
+                        error = open_and_fstat(path, &file_fd, &st);
 
-
-                    if (isdir) {
-                        close(file_fd);
-                        // Redirect /:dir to /:dir/ so relative URLs behave.
-                        if (path[path_size - 1] != '/') {
+                        // Redirect /:dir to /:dir/.
+                        if (!error && S_ISDIR(st.st_mode)) {
                             char headers[256] = {0};
                             snprintf(headers, sizeof headers,
                                     "HTTP/1.1 307 Temporary Redirect\r\n" \
@@ -293,13 +293,6 @@ int main(int argc, char *argv[]) {
                             close(fd);
                             continue;
                         }
-
-                        // Return /:dir/index.html for /:dir/.
-                        path = realloc(path, path_size + 12);
-                        strncpy(path + path_size, "index.html", 11);
-                        path_size += 10;
-
-                        error = open_and_fstat(path, &file_fd, &st);
                     }
 
                     if (error == 404) {
