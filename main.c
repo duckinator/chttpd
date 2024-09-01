@@ -69,30 +69,23 @@ void watch_socket(int epoll_fd, int sock_fd) {
     }
 }
 
+void pabort(char *msg) {
+    perror(msg);
+    exit(EXIT_FAILURE);
+}
+
 void reroot(char *root) {
-    INFO("Creating user and mount namespaces.");
-    if (syscall(SYS_unshare, CLONE_NEWUSER | CLONE_NEWNS)) {
-        perror("unshare");
-        exit(EXIT_FAILURE);
-    }
+    if (syscall(SYS_unshare, CLONE_NEWUSER | CLONE_NEWNS))
+        pabort("unshare");
 
-    INFO("Creating bind mount for pivot_root().");
-    if (mount(root, root, NULL, MS_BIND | MS_PRIVATE, NULL)) {
-        perror("mount");
-        exit(EXIT_FAILURE);
-    }
+    if (mount(root, root, NULL, MS_BIND | MS_PRIVATE, NULL))
+        pabort("mount");
 
-    INFO("Attempting pivot_root().");
-    if (syscall(SYS_pivot_root, root, root)) {
-        perror("pivot_root");
-        exit(EXIT_FAILURE);
-    }
+    if (syscall(SYS_pivot_root, root, root))
+        pabort("pivot_root");
 
-    INFO("Changing to new root directory.");
-    if (chdir("/")) {
-        perror("chdir");
-        exit(EXIT_FAILURE);
-    }
+    if (chdir("/"))
+        pabort("chdir");
 }
 
 int server_socket(void) {
