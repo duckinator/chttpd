@@ -32,6 +32,22 @@
 static char err405[] = "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 37\r\nAllow: GET\r\n\r\nOnly GET/HEAD requests are allowed.\r\n";
 static char err500[] = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: 6\r\n\r\nheck\r\n";
 
+#define EXT_OFFSET 10
+char *exts[] = {
+    // ext[n] = extension
+    // (ext + n + EXT_OFFSET) = mime type
+    //2345 67890
+    ".html\0    text/html",
+    ".css\0     text/css",
+    ".json\0    application/json",
+    ".txt\0     text/plain",
+    ".woff\0    font/woff",
+};
+
+char *octet_stream = "application/octet-stream";
+
+
+
 #define MAX_EVENTS 10
 static int BACKLOG = 50;
 static int PORT = 8080;
@@ -254,11 +270,10 @@ int main(int argc, char *argv[]) {
                         continue;
                     }
 
+                    size_t path_size = strlen(path);
                     if (S_ISDIR(st.st_mode)) {
-                        size_t size = strlen(path);
-
                         // Redirect /:dir to /:dir/ so relative URLs behave.
-                        if (path[size - 1] != '/') {
+                        if (path[path_size - 1] != '/') {
                             char headers[256] = {0};
                             snprintf(headers, sizeof headers,
                                     "HTTP/1.1 307 Temporary Redirect\r\n" \
@@ -272,8 +287,9 @@ int main(int argc, char *argv[]) {
                         }
 
                         // Return /:dir/index.html for /:dir.
-                        path = realloc(path, size + 12);
-                        strncpy(path + size, "index.html", 11);
+                        path = realloc(path, path_size + 12);
+                        strncpy(path + path_size, "index.html", 11);
+                        path_size = strlen(path);
 
                         file_fd = open(path, O_RDONLY);
                         if (file_fd == -1) {
@@ -290,14 +306,34 @@ int main(int argc, char *argv[]) {
                             continue;
                         }
                     }
+                    char *content_type = octet_stream;
+
+                    char *ext = NULL;
+                    for (size_t i = 0; i < path_size; i++)
+                        if (path[i] == '.')
+                            ext = path + i;
+
+                    if (ext) {
+                        for (size_t i = 0; i < sizeof exts; i++) {
+                            char *tmp = exts[i];
+                            bool match = true;
+                            for (size_t j = 0; tmp[j]; j++) {
+                                if (tmp[j] != ext[j]) {
+                                    match = false;
+                                    break;
+                                }
+                            }
+
+                            if (match) {
+                                content_type = exts[i] + EXT_OFFSET;
+                                break;
+                            }
+                        }
+                    }
+                    printf("content_type = '%s'\n", content_type);
 
                     uint64_t content_length = (uint64_t)st.st_size;
-
-                    // TODO: Actually determine content type.
-                    char *content_type = "text/html";
-
                     char headers[256] = {0};
-
                     snprintf(headers, 256,
                             "HTTP/1.1 200 OK\r\n" \
                             "Content-Type: %s\r\n" \
