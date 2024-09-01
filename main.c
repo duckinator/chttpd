@@ -29,8 +29,9 @@
 #endif
 #define DEBUG(msg) DEBUGF("%s", msg)
 
-static char err405[] = "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 37\r\nAllow: GET\r\n\r\nOnly GET/HEAD requests are allowed.\r\n";
-static char err500[] = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: 6\r\n\r\nheck\r\n";
+static char err404[] = "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\n\r\nFile not found.\r\n";
+static char err405[] = "HTTP/1.1 405 Method Not Allowed\r\nAllow: GET\r\nContent-Type: text/plain\r\n\r\nOnly GET/HEAD requests are allowed.\r\n";
+static char err500[] = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nAn internal server error has occurred.\r\n";
 
 #define EXT_OFFSET 10
 char *exts[] = {
@@ -291,7 +292,7 @@ int main(int argc, char *argv[]) {
                     }
 
                     if (status == 404) {
-                        send_chunk(fd, err500);
+                        send_chunk(fd, err404);
                         close(fd);
                         continue;
                     }
