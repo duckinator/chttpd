@@ -144,6 +144,22 @@ ssize_t send_chunk(int fd, char *response) {
     return ret;
 }
 
+int open_and_fstat(char *path, int *fd, struct stat *st) {
+    *fd = open(path, O_RDONLY);
+    if (*fd == -1) {
+        perror("open");
+        return 404;
+    }
+
+    if (fstat(*fd, st)) {
+        perror("fstat");
+        return 500;
+    }
+
+    return 0;
+}
+
+
 int main(int argc, char *argv[]) {
     int epoll_fd = epoll_create1(0);
     INFO("Got epoll_fd.");
@@ -245,24 +261,13 @@ int main(int argc, char *argv[]) {
                     // GET or HEAD request.
                     int fd = events[i].data.fd;
 
-                    int file_fd = open(path, O_RDONLY);
-                    if (file_fd == -1) {
-                        perror("open");
-                        send_chunk(fd, err500);
-                        close(fd);
-                        continue;
-                    }
+                    int file_fd = -1;
+                    struct stat st = {0};
 
-                    struct stat st;
-                    if (fstat(file_fd, &st)) {
-                        perror("fstat");
-                        send_chunk(fd, err500);
-                        close(fd);
-                        continue;
-                    }
+                    int status = open_and_fstat(path, &file_fd, &st);
 
                     size_t path_size = strlen(path);
-                    if (S_ISDIR(st.st_mode)) {
+                    if (!status && S_ISDIR(st.st_mode)) {
                         // Redirect /:dir to /:dir/ so relative URLs behave.
                         if (path[path_size - 1] != '/') {
                             char headers[256] = {0};
@@ -282,21 +287,21 @@ int main(int argc, char *argv[]) {
                         strncpy(path + path_size, "index.html", 11);
                         path_size = strlen(path);
 
-                        file_fd = open(path, O_RDONLY);
-                        if (file_fd == -1) {
-                            perror("open");
-                            send_chunk(fd, err500);
-                            close(fd);
-                            continue;
-                        }
-
-                        if (fstat(file_fd, &st)) {
-                            perror("fstat");
-                            send_chunk(fd, err500);
-                            close(fd);
-                            continue;
-                        }
+                        status = open_and_fstat(path, &file_fd, &st);
                     }
+
+                    if (status == 404) {
+                        send_chunk(fd, err500);
+                        close(fd);
+                        continue;
+                    }
+
+                    if (status == 500) {
+                        send_chunk(fd, err500);
+                        close(fd);
+                        continue;
+                    }
+
 
                     char *ext = NULL;
                     for (size_t i = 0; i < path_size; i++)
