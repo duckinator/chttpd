@@ -214,7 +214,7 @@ int main(int argc, char *argv[]) {
                 DEBUGF("%li\n", count);
                 buf[512] = '\0';
 
-                if (count == -1 || count == EOF) {
+                if (count == 0 || count == -1) { // 0 = EOF, -1 = error
                     if (count == -1 && errno != 0 && errno != EAGAIN && errno != EBADF) {
                         // if count == -1, read() failed.
                         // we don't care about the following errno values:
@@ -225,11 +225,6 @@ int main(int argc, char *argv[]) {
                     }
                     close(events[i].data.fd);
                     break;
-                }
-
-                if (count == 0) {
-                    WARN("warning: read zero bytes?");
-                    close(events[i].data.fd);
                 }
 
                 char *method = NULL;
