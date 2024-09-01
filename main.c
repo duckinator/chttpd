@@ -140,9 +140,6 @@ int main(int argc, char *argv[]) {
         pabort("epoll_create1");
 
     int server_fd = server_socket();
-    if (server_fd == -1) {
-        return EXIT_FAILURE;
-    }
     INFO("Got server socket.");
 
     register_signal_handler();
