@@ -290,12 +290,9 @@ int main(int argc, char *argv[]) {
                         continue;
                     }
 
-                    char *ext = NULL;
-                    for (size_t i = 0; i < path_size; i++)
-                        if (path[i] == '.')
-                            ext = path + i;
-
                     char *content_type = "application/octet-stream";
+
+                    char *ext = strchr(path, '.');
                     if (ext) {
                         for (size_t i = 0; i < sizeof exts; i++) {
                             char *tmp = exts[i];
