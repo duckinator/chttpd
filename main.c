@@ -266,10 +266,19 @@ int main(int argc, char *argv[]) {
                     int file_fd = -1;
                     struct stat st = {0};
 
-                    int error = open_and_fstat(path, &file_fd, &st);
-
                     size_t path_size = strlen(path);
-                    if (!error && S_ISDIR(st.st_mode)) {
+
+                    int error = 1;
+                    // if the path ends with /, assume it's a directory.
+                    int isdir = path[path_size - 1] == '/';
+
+                    if (!isdir) {
+                        error = open_and_fstat(path, &file_fd, &st);
+                        isdir = !error && S_ISDIR(st.st_mode);
+                    }
+
+
+                    if (isdir) {
                         close(file_fd);
                         // Redirect /:dir to /:dir/ so relative URLs behave.
                         if (path[path_size - 1] != '/') {
