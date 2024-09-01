@@ -268,31 +268,28 @@ int main(int argc, char *argv[]) {
 
                     size_t path_size = strlen(path);
 
-                    int error = 0;
-
-                    if (path[path_size - 1] == '/') {
+                    bool ends_with_slash = path[path_size - 1] == '/';
+                    if (ends_with_slash) {
                         // Return /:dir/index.html for /:dir/.
                         path = realloc(path, path_size + 12);
                         strncpy(path + path_size, "index.html", 11);
                         path_size += 10;
+                    }
 
-                        error = open_and_fstat(path, &file_fd, &st);
-                    } else {
-                        error = open_and_fstat(path, &file_fd, &st);
+                    int error = open_and_fstat(path, &file_fd, &st);
 
-                        // Redirect /:dir to /:dir/.
-                        if (!error && S_ISDIR(st.st_mode)) {
-                            char headers[256] = {0};
-                            snprintf(headers, sizeof headers,
-                                    "HTTP/1.1 307 Temporary Redirect\r\n" \
-                                    "Location: %s/\r\n" \
-                                    "Content-Length: 0\r\n" \
-                                    "\r\n",
-                                    path);
-                            send_chunk(fd, headers);
-                            close(fd);
-                            continue;
-                        }
+                    // Redirect /:dir to /:dir/.
+                    if (!ends_with_slash && !error && S_ISDIR(st.st_mode)) {
+                        char headers[256] = {0};
+                        snprintf(headers, sizeof headers,
+                                "HTTP/1.1 307 Temporary Redirect\r\n" \
+                                "Location: %s/\r\n" \
+                                "Content-Length: 0\r\n" \
+                                "\r\n",
+                                path);
+                        send_chunk(fd, headers);
+                        close(fd);
+                        continue;
                     }
 
                     if (error == 404) {
