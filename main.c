@@ -264,6 +264,8 @@ int main(int argc, char *argv[]) {
                         else // All other errors - return 500.
                             send_chunk(fd, err500);
                         close(fd);
+                        free(method);
+                        free(path);
                         continue;
                     }
 
@@ -273,12 +275,15 @@ int main(int argc, char *argv[]) {
                         close(file_fd);
                         send_chunk(fd, err500);
                         close(fd);
+                        free(method);
+                        free(path);
                         continue;
                     }
 
                     // Redirect /:dir to /:dir/.
                     if (!ends_with_slash && S_ISDIR(st.st_mode)) {
                         char headers[256] = {0};
+                        close(file_fd);
                         snprintf(headers, sizeof headers,
                                 "HTTP/1.1 307 Temporary Redirect\r\n" \
                                 "Location: %s/\r\n" \
@@ -287,6 +292,8 @@ int main(int argc, char *argv[]) {
                                 path);
                         send_chunk(fd, headers);
                         close(fd);
+                        free(method);
+                        free(path);
                         continue;
                     }
 
