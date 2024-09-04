@@ -122,15 +122,13 @@ void setcork(int fd, int optval) {
         perror("setcork/setsockopt");
 }
 
-ssize_t send_chunk(int fd, char *response) {
+void send_chunk(int fd, char *response) {
     size_t length = strlen(response);
-    ssize_t ret = send(fd, response, length, MSG_NOSIGNAL);
-    if (ret == -1) {
+    if (send(fd, response, length, MSG_NOSIGNAL) == -1) {
         perror("send");
         if (errno == EPIPE)
             close(fd);
     }
-    return ret;
 }
 
 int main(int argc, char *argv[]) {
