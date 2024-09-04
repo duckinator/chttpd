@@ -25,5 +25,5 @@ System configuration:
 - 2TB nvme SSD.
 
 Performance test for a large number of small requests:
-- Consistently over 20,000 requests/second.
-- Response times: 0.0164s slowest / 0.0022s average / 0.0008s fastest.
+- Consistently over 28,000 requests/second.
+- Response times: 0.0082s slowest / 0.0018s average / 0.0004s fastest.
