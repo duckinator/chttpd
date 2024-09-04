@@ -75,9 +75,8 @@ void watch_socket(int epoll_fd, int sock_fd) {
     event.events = EPOLLIN | EPOLLET;
     event.data.fd = sock_fd;
 
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sock_fd, &event)) {
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sock_fd, &event))
         perror("epoll_ctl");
-    }
 }
 
 void pabort(char *msg) {
@@ -107,9 +106,8 @@ int server_socket(void) {
     // Mark address as reusable to avoid problems if client sockets aren't
     // all closed at exit.
     int optval = 1;
-    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(int))) {
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(int)))
         perror("setsockopt");
-    }
 
     if (fcntl(server_fd, F_SETFL, O_NONBLOCK) == -1) {
         perror("fcntl");
