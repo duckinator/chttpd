@@ -14,7 +14,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>       // fstat(), struct stat.
 #include <sys/syscall.h>    // SYS_* constants.
-#include <unistd.h>         // syscall(), chroot(), maybe other things.
+#include <unistd.h>         // syscall(), maybe other things.
 
 #define LOG(msg) printf("%s:%d:%s(): %s\n", __FILE__, __LINE__, __func__, msg)
 
@@ -40,13 +40,10 @@ static int PORT = 8080;
 
 volatile sig_atomic_t done = 0;
 void prepare_to_exit(int _signal) {
-    if (done) {
-        puts("Received Ctrl-C twice; exiting immediately!");
+    if (done)
         exit(EXIT_FAILURE);
-    }
 
-    puts("Handling remaining connections, then exiting.");
-    puts("Press Ctrl-C again to exit immediately.");
+    puts("Cleaning up. Press Ctrl-C again to exit immediately.");
     done = 1;
 }
 
@@ -55,10 +52,10 @@ void register_signal_handler(void) {
     sigact.sa_handler = prepare_to_exit;
     sigemptyset(&sigact.sa_mask);
     sigact.sa_flags = 0;
-    sigaction(SIGINT, &sigact, (struct sigaction *)NULL);
+    sigaction(SIGINT, &sigact, NULL);
 
     sigact.sa_handler = SIG_IGN;
-    sigaction(SIGPIPE, &sigact, (struct sigaction *)NULL);
+    sigaction(SIGPIPE, &sigact, NULL);
 }
 
 void watch_socket(int epoll_fd, int sock_fd) {
