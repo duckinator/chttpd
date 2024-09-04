@@ -259,95 +259,99 @@ int main(int argc, char *argv[]) {
                     // Non-GET/HEAD requests get a 405 error.
                     send_chunk(events[i].data.fd, err405);
                     close(events[i].data.fd);
-                } else if (path) {
-                    // GET or HEAD request.
-                    int fd = events[i].data.fd;
+                    continue;
+                }
 
-                    size_t path_size = strlen(path);
+                if (!path)
+                    continue;
 
-                    bool ends_with_slash = path[path_size - 1] == '/';
-                    if (ends_with_slash) {
-                        // Return /:dir/index.html for /:dir/.
-                        strncpy(path + path_size, "index.html", 11);
-                        path_size += 10;
-                    }
+                // GET or HEAD request.
+                int fd = events[i].data.fd;
 
-                    int file_fd = open(path, O_RDONLY); // Try to open path.
-                    if (file_fd == -1) { // If opening it failed.
-                        perror("open");
-                        if (errno == ENOENT) // No such path - return 404.
-                            send_chunk(fd, err404);
-                        else // All other errors - return 500.
-                            send_chunk(fd, err500);
-                        close(fd);
-                        continue;
-                    }
+                size_t path_size = strlen(path);
 
-                    struct stat st;
-                    if (fstat(file_fd, &st)) { // Needed for catching /:dir.
-                        perror("fstat");
-                        close(file_fd);
+                bool ends_with_slash = path[path_size - 1] == '/';
+                if (ends_with_slash) {
+                    // Return /:dir/index.html for /:dir/.
+                    strncpy(path + path_size, "index.html", 11);
+                    path_size += 10;
+                }
+
+                int file_fd = open(path, O_RDONLY); // Try to open path.
+                if (file_fd == -1) { // If opening it failed.
+                    perror("open");
+                    if (errno == ENOENT) // No such path - return 404.
+                        send_chunk(fd, err404);
+                    else // All other errors - return 500.
                         send_chunk(fd, err500);
-                        close(fd);
-                        continue;
-                    }
+                    close(fd);
+                    continue;
+                }
 
-                    // Redirect /:dir to /:dir/.
-                    if (!ends_with_slash && S_ISDIR(st.st_mode)) {
-                        char headers[256] = {0};
-                        close(file_fd);
-                        snprintf(headers, sizeof headers,
-                                "HTTP/1.1 307 Temporary Redirect\r\n" \
-                                "Location: %s/\r\n" \
-                                "Content-Length: 0\r\n" \
-                                "\r\n",
-                                path);
-                        send_chunk(fd, headers);
-                        close(fd);
-                        continue;
-                    }
+                struct stat st;
+                if (fstat(file_fd, &st)) { // Needed for catching /:dir.
+                    perror("fstat");
+                    close(file_fd);
+                    send_chunk(fd, err500);
+                    close(fd);
+                    continue;
+                }
 
-                    char *content_type = "application/octet-stream";
+                // Redirect /:dir to /:dir/.
+                if (!ends_with_slash && S_ISDIR(st.st_mode)) {
+                    char headers[256] = {0};
+                    close(file_fd);
+                    snprintf(headers, sizeof headers,
+                            "HTTP/1.1 307 Temporary Redirect\r\n" \
+                            "Location: %s/\r\n" \
+                            "Content-Length: 0\r\n" \
+                            "\r\n",
+                            path);
+                    send_chunk(fd, headers);
+                    close(fd);
+                    continue;
+                }
 
-                    char *ext = strchr(path, '.');
-                    if (ext) {
-                        for (size_t i = 0; i < sizeof exts; i++) {
-                            char *tmp = exts[i];
-                            bool match = true;
-                            for (size_t j = 0; tmp[j] && match; j++)
-                                match = tmp[j] == ext[j];
+                char *content_type = "application/octet-stream";
 
-                            if (match) {
-                                content_type = exts[i] + EXT_OFFSET;
-                                break;
-                            }
+                char *ext = strchr(path, '.');
+                if (ext) {
+                    for (size_t i = 0; i < sizeof exts; i++) {
+                        char *tmp = exts[i];
+                        bool match = true;
+                        for (size_t j = 0; tmp[j] && match; j++)
+                            match = tmp[j] == ext[j];
+
+                        if (match) {
+                            content_type = exts[i] + EXT_OFFSET;
+                            break;
                         }
                     }
-
-                    uint64_t content_length = (uint64_t)st.st_size;
-                    char headers[256] = {0};
-                    snprintf(headers, 256,
-                            "HTTP/1.1 200 OK\r\n" \
-                            "Content-Type: %s\r\n" \
-                            "Content-Length: %lu\r\n" \
-                            "Connection: close\r\n" \
-                            "Server: chttpd <https://github.com/duckinator/chttpd>\r\n" \
-                            "\r\n",
-                            content_type, content_length);
-
-                    setcork(fd, 1); // put a cork in it
-
-                    send_chunk(fd, headers);
-
-                    // For HEAD requests, only return the headers.
-                    if (is_get)
-                        sendfile(fd, file_fd, NULL, content_length);
-
-                    setcork(fd, 0); // release it all
-
-                    close(file_fd);
-                    close(fd);
                 }
+
+                uint64_t content_length = (uint64_t)st.st_size;
+                char headers[256] = {0};
+                snprintf(headers, 256,
+                        "HTTP/1.1 200 OK\r\n" \
+                        "Content-Type: %s\r\n" \
+                        "Content-Length: %lu\r\n" \
+                        "Connection: close\r\n" \
+                        "Server: chttpd <https://github.com/duckinator/chttpd>\r\n" \
+                        "\r\n",
+                        content_type, content_length);
+
+                setcork(fd, 1); // put a cork in it
+
+                send_chunk(fd, headers);
+
+                // For HEAD requests, only return the headers.
+                if (is_get)
+                    sendfile(fd, file_fd, NULL, content_length);
+
+                setcork(fd, 0); // release it all
+
+                close(file_fd);
+                close(fd);
             } // while (true)
         }
     }
