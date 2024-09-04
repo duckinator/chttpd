@@ -16,16 +16,7 @@
 #include <sys/syscall.h>    // SYS_* constants.
 #include <unistd.h>         // syscall(), chroot(), maybe other things.
 
-#define LOG(level, msg) printf(level " %s:%d:%s(): %s\n", __FILE__, __LINE__, __func__, msg)
-#define INFO(msg)   LOG("INFO ", msg)
-#define WARN(msg)   LOG("WARN ", msg)
-
-#ifdef DEBUG_MODE
-#   define DEBUGF(fmt, ...) fprintf(stderr, level " %s:%d:%s(): " fmt, __FILE__, __LINE__, __func__, __VA_ARGS__)
-#else
-#   define DEBUGF(fmt, ...) /* DEBUGF() */
-#endif
-#define DEBUG(msg) DEBUGF("%s", msg)
+#define LOG(msg) printf("%s:%d:%s(): %s\n", __FILE__, __LINE__, __func__, msg)
 
 static char err404[] = "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\n\r\nFile not found.\r\n";
 static char err405[] = "HTTP/1.1 405 Method Not Allowed\r\nAllow: GET\r\nContent-Type: text/plain\r\n\r\nOnly GET/HEAD requests are allowed.\r\n";
@@ -147,32 +138,30 @@ ssize_t send_chunk(int fd, char *response) {
 
 int main(int argc, char *argv[]) {
     int epoll_fd = epoll_create1(0);
-    INFO("Got epoll_fd.");
+    LOG("Got epoll_fd.");
 
     if (epoll_fd == -1)
         pabort("epoll_create1");
 
     int server_fd = server_socket();
-    INFO("Got server socket.");
+    LOG("Got server socket.");
 
     register_signal_handler();
-    INFO("Registered signal handlers.");
+    LOG("Registered signal handlers.");
 
     struct epoll_event events[MAX_EVENTS] = {0};
     watch_socket(epoll_fd, server_fd);
-    INFO("Watching server_fd.");
+    LOG("Watching server_fd.");
 
     reroot("site");
-    INFO("Theoretically isolated ./site as process mount root.");
+    LOG("Theoretically isolated ./site as process mount root.");
 
     while (!done) {
-        DEBUG("epoll_wait()");
         int num_events = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
         if (num_events < 0) {
             perror("epoll_wait");
             break;
         }
-        DEBUGF("num_events = %i\n", num_events);
 
         for (size_t i = 0; i < num_events; i++) {
             if ((events[i].events & EPOLLERR) ||
@@ -184,10 +173,8 @@ int main(int argc, char *argv[]) {
             }
 
             if (server_fd == events[i].data.fd) {
-                DEBUG("Handling server socket.");
                 while (true) {
                     int client_fd = accept(server_fd, NULL, NULL);
-                    DEBUG("accept()");
                     if (client_fd == -1) {
                         // EAGAIN/EWOULDBLOCK aren't actual errors, so
                         // be quiet about it.
@@ -207,12 +194,9 @@ int main(int argc, char *argv[]) {
                 continue;
             }
 
-            DEBUG("Handling client socket.");
             while (true) {
                 char buf[513] = {0};
-                DEBUGF("\nread(%i, buf, %lu) == ", events[i].data.fd, sizeof buf - 1);
                 ssize_t count = read(events[i].data.fd, buf, sizeof buf - 1);
-                DEBUGF("%li\n", count);
                 buf[512] = '\0';
 
                 if (count == 0 || count == -1) { // 0 = EOF, -1 = error
@@ -348,10 +332,10 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    INFO("Closing server socket.");
+    LOG("Closing server socket.");
     close(server_fd);
 
-    INFO("Closing epoll socket.");
+    LOG("Closing epoll socket.");
     close(epoll_fd);
 
     return EXIT_SUCCESS;
