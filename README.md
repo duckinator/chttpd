@@ -4,10 +4,11 @@ A single-threaded HTTP/1.1 server written in C, which can manage over 20,000 req
 
 I got this performance by leaning heavily on Linux kernel features:
 - `epoll` is used for I/O event notifications;
-- `sendfile` is used to send files without an intermittent buffer; and
-- namespaces and `pivot_root` are used for filesystem isolation.
+- `sendfile` is used to send files without an intermittent buffer;
+- namespaces and `pivot_root` are used for filesystem isolation;
+- `TCP_CORK` to group small `send` and `sendfile` calls together.
 
-To elaborate on the last point a bit: the `./site/` directory becomes `/` for
+To elaborate on the namespace part a bit: the `./site/` directory becomes `/` for
 the chttpd process, which means if you request `/index.html` the file is
 _actually located at_ `/index.html` as far as the server is concerned.
 No path processing needed.
