@@ -313,13 +313,8 @@ int main(int argc, char *argv[]) {
 
                 char *ext = strchr(path, '.');
                 if (ext) {
-                    for (size_t i = 0; i < sizeof exts; i++) {
-                        char *tmp = exts[i];
-                        bool match = true;
-                        for (size_t j = 0; tmp[j] && match; j++)
-                            match = tmp[j] == ext[j];
-
-                        if (match) {
+                    for (size_t i = 0; i < sizeof(exts); i++) {
+                        if (strcmp(exts[i], ext) == 0) {
                             content_type = exts[i] + EXT_OFFSET;
                             break;
                         }
