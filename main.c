@@ -2,6 +2,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/sched.h>    // CLONE_* constants.
+#include <netinet/tcp.h>
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -128,6 +129,11 @@ int server_socket(void) {
         pabort("listen");
 
     return server_fd;
+}
+
+void setcork(int fd, int optval) {
+    if (setsockopt(fd, SOL_TCP, TCP_CORK, &optval, sizeof(int)))
+        perror("setcork/setsockopt");
 }
 
 ssize_t send_chunk(int fd, char *response) {
@@ -321,11 +327,15 @@ int main(int argc, char *argv[]) {
                             "\r\n",
                             content_type, content_length);
 
+                    setcork(fd, 1); // put a cork in it
+
                     send_chunk(fd, headers);
 
                     // For HEAD requests, only return the headers.
                     if (is_get)
                         sendfile(fd, file_fd, NULL, content_length);
+
+                    setcork(fd, 0); // release it all
 
                     close(file_fd);
                     close(fd);
