@@ -1,16 +1,13 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
-//#include <linux/limits.h>
 #include <linux/sched.h>    // CLONE_* constants.
 #include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-//#include <sched.h>
 #include <sys/epoll.h>
-//#include <sys/mman.h>
 #include <sys/mount.h>      // mount(), MS_* constants.
 #include <sys/sendfile.h>
 #include <sys/socket.h>
@@ -112,7 +109,6 @@ int server_socket(void) {
     if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &optval, sizeof(int))) {
         perror("setsockopt");
     }
-
 
     if (fcntl(server_fd, F_SETFL, O_NONBLOCK) == -1) {
         perror("fcntl");
