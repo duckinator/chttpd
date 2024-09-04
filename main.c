@@ -231,8 +231,8 @@ int main(int argc, char *argv[]) {
                 if (!method || !path)
                     continue;
 
-                int is_get = strncmp("GET", method, 4) == 0;
-                int is_head = strncmp("HEAD", method, 5) == 0;
+                bool is_get = strncmp("GET", method, 4) == 0;
+                bool is_head = strncmp("HEAD", method, 5) == 0;
                 if (!is_get && !is_head) {
                     // Non-GET/HEAD requests get a 405 error.
                     send_chunk(events[i].data.fd, err405);
