@@ -231,6 +231,7 @@ int main(int argc, char *argv[]) {
                 char *method = NULL;
                 char *method_end = NULL;
                 char *path = NULL;
+                size_t path_size = -1;
 
                 for (char *tmp = buf; *tmp; tmp++) {
                     if (*tmp != ' ')
@@ -243,6 +244,7 @@ int main(int argc, char *argv[]) {
                     } else if (!path) {
                         path = method_end + 1;
                         *tmp = '\0';
+                        path_size = tmp - path;
                         break;
                     }
                 }
@@ -264,8 +266,6 @@ int main(int argc, char *argv[]) {
 
                 // GET or HEAD request.
                 int fd = events[i].data.fd;
-
-                size_t path_size = strlen(path);
 
                 bool ends_with_slash = path[path_size - 1] == '/';
                 if (ends_with_slash) {
