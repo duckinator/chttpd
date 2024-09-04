@@ -231,16 +231,31 @@ int main(int argc, char *argv[]) {
                 }
 
                 char *method = NULL;
+                char *method_end = NULL;
                 char *path = NULL;
-                // e.g. "GET <path>"
-                int scan_results = sscanf(buf, "%ms %ms", &method, &path);
 
-                bool is_get = method && method[0] == 'G' && method[1] == 'E' && method[2] == 'T' && method[3] == '\0';
-                bool is_head = method && method[0] == 'H' && method[1] == 'E' && method[2] == 'A' && method[3] == 'D' && method[4] == '\0';
+                for (char *tmp = buf; *tmp; tmp++) {
+                    if (*tmp != ' ')
+                        continue;
 
-                if (scan_results < 2) {
-                    // Nothing to do.
-                } else if (!is_get && !is_head) {
+                    if (!method) {
+                        method = buf;
+                        *tmp = '\0';
+                        method_end = tmp;
+                    } else if (!path) {
+                        path = method_end + 1;
+                        *tmp = '\0';
+                        break;
+                    }
+                }
+
+                if (!method || !path)
+                    continue;
+
+                bool is_get = method[0] == 'G' && method[1] == 'E' && method[2] == 'T' && method[3] == '\0';
+                bool is_head = method[0] == 'H' && method[1] == 'E' && method[2] == 'A' && method[3] == 'D' && method[4] == '\0';
+
+                if (!is_get && !is_head) {
                     // Non-GET/HEAD requests get a 405 error.
                     send_chunk(events[i].data.fd, err405);
                     close(events[i].data.fd);
@@ -253,7 +268,6 @@ int main(int argc, char *argv[]) {
                     bool ends_with_slash = path[path_size - 1] == '/';
                     if (ends_with_slash) {
                         // Return /:dir/index.html for /:dir/.
-                        path = realloc(path, path_size + 12);
                         strncpy(path + path_size, "index.html", 11);
                         path_size += 10;
                     }
@@ -266,8 +280,6 @@ int main(int argc, char *argv[]) {
                         else // All other errors - return 500.
                             send_chunk(fd, err500);
                         close(fd);
-                        free(method);
-                        free(path);
                         continue;
                     }
 
@@ -277,8 +289,6 @@ int main(int argc, char *argv[]) {
                         close(file_fd);
                         send_chunk(fd, err500);
                         close(fd);
-                        free(method);
-                        free(path);
                         continue;
                     }
 
@@ -294,8 +304,6 @@ int main(int argc, char *argv[]) {
                                 path);
                         send_chunk(fd, headers);
                         close(fd);
-                        free(method);
-                        free(path);
                         continue;
                     }
 
@@ -340,9 +348,6 @@ int main(int argc, char *argv[]) {
                     close(file_fd);
                     close(fd);
                 }
-
-                free(method);
-                free(path);
             } // while (true)
         }
     }
