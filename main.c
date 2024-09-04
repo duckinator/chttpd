@@ -151,6 +151,7 @@ int main(int argc, char *argv[]) {
     reroot("site");
     LOG("Theoretically isolated ./site as process mount root.");
 
+    char headers[256] = {0};
     while (!done) {
         int num_events = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
         if (num_events < 0) {
@@ -275,7 +276,6 @@ int main(int argc, char *argv[]) {
 
                 // Redirect /:dir to /:dir/.
                 if (!ends_with_slash && S_ISDIR(st.st_mode)) {
-                    char headers[256] = {0};
                     close(file_fd);
                     snprintf(headers, sizeof headers,
                             "HTTP/1.1 307 Temporary Redirect\r\n" \
@@ -300,8 +300,7 @@ int main(int argc, char *argv[]) {
                     }
                 }
 
-                uint64_t content_length = (uint64_t)st.st_size;
-                char headers[256] = {0};
+                uint64_t content_length = st.st_size;
                 snprintf(headers, 256,
                         "HTTP/1.1 200 OK\r\n" \
                         "Content-Type: %s\r\n" \
