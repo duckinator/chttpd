@@ -17,6 +17,7 @@
 #include <unistd.h>         // syscall(), maybe other things.
 
 static char err404[] = "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: 17\r\n\r\nFile not found.\r\n";
+static char err414[] = "HTTP/1.1 414 URI Too Long\r\nContent-Type: text/plain\r\nContent-Length: 57\r\n\r\nThe URI provided is too long for the server to process.\r\n";
 static char err405[] = "HTTP/1.1 405 Method Not Allowed\r\nAllow: GET\r\nContent-Type: text/plain\r\nContent-Length: 37\r\n\r\nOnly GET/HEAD requests are allowed.\r\n";
 static char err500[] = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: 40\r\n\r\nAn internal server error has occurred.\r\n";
 
@@ -234,6 +235,13 @@ int main(int argc, char *argv[]) {
                         path_size = tmp - path;
                         break;
                     }
+                }
+
+                if (method && !path) {
+                    // The path didn't fit in recvbuf, meaning it was too long.
+                    send_chunk(events[i].data.fd, err414);
+                    close(events[i].data.fd);
+                    continue;
                 }
 
                 if (!method || !path)
