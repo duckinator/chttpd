@@ -20,6 +20,9 @@ static char err404[] = "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\n\r
 static char err405[] = "HTTP/1.1 405 Method Not Allowed\r\nAllow: GET\r\nContent-Type: text/plain\r\n\r\nOnly GET/HEAD requests are allowed.\r\n";
 static char err500[] = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nAn internal server error has occurred.\r\n";
 
+// Maximum length of a request path.
+#define MAX_PATH_SIZE 512
+
 #define EXT_OFFSET 10
 char *exts[] = {
     // ext[n] = extension
@@ -153,7 +156,10 @@ int main(int argc, char *argv[]) {
     reroot("site");
     LOG("Theoretically isolated ./site as process mount root.");
 
-    char headers[256] = {0};
+    // we need to be able to read `HEAD <MAX_PATH_SIZE path> ` plus a null byte.
+    char recvbuf[MAX_PATH_SIZE + 7] = {0};
+    // Redirect headers are 67 bytes longer than the path, plus need a null byte.
+    char sendbuf[MAX_PATH_SIZE + 68] = {0};
     while (!done) {
         int num_events = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
         if (num_events < 0) {
@@ -193,9 +199,8 @@ int main(int argc, char *argv[]) {
             }
 
             while (true) {
-                char buf[513] = {0};
-                ssize_t count = read(events[i].data.fd, buf, sizeof buf - 1);
-                buf[512] = '\0';
+                ssize_t count = read(events[i].data.fd, recvbuf, sizeof recvbuf - 1);
+                recvbuf[sizeof(recvbuf) - 1] = '\0';
 
                 if (count == 0 || count == -1) { // 0 = EOF, -1 = error
                     if (count == -1 && errno != 0 && errno != EAGAIN && errno != EBADF) {
@@ -215,12 +220,12 @@ int main(int argc, char *argv[]) {
                 char *path = NULL;
                 size_t path_size = -1;
 
-                for (char *tmp = buf; *tmp; tmp++) {
+                for (char *tmp = recvbuf; *tmp; tmp++) {
                     if (*tmp != ' ')
                         continue;
 
                     if (!method) {
-                        method = buf;
+                        method = recvbuf;
                         *tmp = '\0';
                         method_end = tmp;
                     } else if (!path) {
@@ -279,13 +284,13 @@ int main(int argc, char *argv[]) {
                 // Redirect /:dir to /:dir/.
                 if (!ends_with_slash && S_ISDIR(st.st_mode)) {
                     close(file_fd);
-                    snprintf(headers, sizeof headers,
+                    snprintf(sendbuf, sizeof sendbuf,
                             "HTTP/1.1 307 Temporary Redirect\r\n" \
                             "Location: %s/\r\n" \
                             "Content-Length: 0\r\n" \
                             "\r\n",
                             path);
-                    send_chunk(fd, headers);
+                    send_chunk(fd, sendbuf);
                     close(fd);
                     continue;
                 }
@@ -303,7 +308,7 @@ int main(int argc, char *argv[]) {
                 }
 
                 uint64_t content_length = st.st_size;
-                snprintf(headers, 256,
+                snprintf(sendbuf, 256,
                         "HTTP/1.1 200 OK\r\n" \
                         "Content-Type: %s\r\n" \
                         "Content-Length: %lu\r\n" \
@@ -314,7 +319,7 @@ int main(int argc, char *argv[]) {
 
                 setcork(fd, 1); // put a cork in it
 
-                send_chunk(fd, headers);
+                send_chunk(fd, sendbuf);
 
                 // For HEAD requests, only return the headers.
                 if (is_get)
