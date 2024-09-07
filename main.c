@@ -16,9 +16,9 @@
 #include <sys/syscall.h>    // SYS_* constants.
 #include <unistd.h>         // syscall(), maybe other things.
 
-static char err404[] = "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\n\r\nFile not found.\r\n";
-static char err405[] = "HTTP/1.1 405 Method Not Allowed\r\nAllow: GET\r\nContent-Type: text/plain\r\n\r\nOnly GET/HEAD requests are allowed.\r\n";
-static char err500[] = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nAn internal server error has occurred.\r\n";
+static char err404[] = "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\nContent-Length: 17\r\n\r\nFile not found.\r\n";
+static char err405[] = "HTTP/1.1 405 Method Not Allowed\r\nAllow: GET\r\nContent-Type: text/plain\r\nContent-Length: 37\r\n\r\nOnly GET/HEAD requests are allowed.\r\n";
+static char err500[] = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: 40\r\n\r\nAn internal server error has occurred.\r\n";
 
 // Maximum length of a request path.
 #define MAX_PATH_SIZE 512
