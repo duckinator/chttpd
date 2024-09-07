@@ -16,8 +16,6 @@
 #include <sys/syscall.h>    // SYS_* constants.
 #include <unistd.h>         // syscall(), maybe other things.
 
-#define LOG(msg) printf("%s:%d:%s(): %s\n", __FILE__, __LINE__, __func__, msg)
-
 static char err404[] = "HTTP/1.1 404 Not Found\r\nContent-Type: text/plain\r\n\r\nFile not found.\r\n";
 static char err405[] = "HTTP/1.1 405 Method Not Allowed\r\nAllow: GET\r\nContent-Type: text/plain\r\n\r\nOnly GET/HEAD requests are allowed.\r\n";
 static char err500[] = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\n\r\nAn internal server error has occurred.\r\n";
@@ -37,6 +35,10 @@ char *exts[] = {
 #define MAX_EVENTS 10
 static int BACKLOG = 50;
 static int PORT = 8080;
+
+static void LOG(char *msg) {
+    printf("%s:%d:%s(): %s\n", __FILE__, __LINE__, __func__, msg);
+}
 
 volatile sig_atomic_t done = 0;
 void prepare_to_exit(int _signal) {
