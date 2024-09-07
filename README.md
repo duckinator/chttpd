@@ -17,6 +17,16 @@ I considered making it multithreaded, but honestly I'm not sure I even need to.
 
 If you need more than 20,000 requests per second, use a real server like nginx. <3
 
+## Port 80?
+
+The code, as-is, doesn't need root. But what if you want to run it on port 80?
+
+1. Change the port from `8080` to `80`.
+2. (Re)build chttpd.
+3. Run `setcap CAP_NET_BIND_SERVICE=+eip chttpd` (probably as root).
+
+In theory it should work!
+
 ## Performance
 
 System configuration:
