@@ -222,14 +222,11 @@ int main(int argc, char *argv[]) {
                 size_t path_size = -1;
 
                 for (char *tmp = recvbuf; *tmp; tmp++) {
-                    if (*tmp != ' ')
-                        continue;
-
-                    if (!method) {
+                    if (!method && *tmp == ' ') {
                         method = recvbuf;
                         *tmp = '\0';
                         method_end = tmp;
-                    } else if (!path) {
+                    } else if (!path && (*tmp == ' ' || *tmp == '\r')) {
                         path = method_end + 1;
                         *tmp = '\0';
                         path_size = tmp - path;
