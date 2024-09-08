@@ -1,6 +1,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <liburing.h>
 #include <linux/sched.h>    // CLONE_* constants.
 #include <netinet/tcp.h>
 #include <signal.h>
@@ -36,6 +37,22 @@ char *exts[] = {
     ".woff\0    font/woff",
 };
 
+enum event_type_e {
+    EVENT_TYPE_ACCEPT,
+    EVENT_TYPE_READ,
+    EVENT_TYPE_WRITE,
+};
+
+typedef struct request {
+    int event_type;
+    int client_fd;
+    int iovec_count;
+    struct iovec iov[];
+} request_t;
+
+struct io_uring ring;
+
+
 #define MAX_EVENTS 10
 static int BACKLOG = 50;
 static int PORT = 8080;
@@ -62,15 +79,6 @@ void register_signal_handler(void) {
 
     sigact.sa_handler = SIG_IGN;
     sigaction(SIGPIPE, &sigact, NULL);
-}
-
-void watch_socket(int epoll_fd, int sock_fd) {
-    struct epoll_event event;
-    event.events = EPOLLIN | EPOLLET;
-    event.data.fd = sock_fd;
-
-    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sock_fd, &event))
-        perror("epoll_ctl");
 }
 
 void pabort(char *msg) {
@@ -128,223 +136,265 @@ void setcork(int fd, int optval) {
         perror("setcork/setsockopt");
 }
 
-void send_chunk(int fd, char *response) {
-    size_t length = strlen(response);
-    if (send(fd, response, length, MSG_NOSIGNAL) == -1) {
-        perror("send");
-        if (errno == EPIPE)
-            close(fd);
+void request_accept(int server_fd) {
+    struct io_uring_sqe *sqe = io_uring_get_sqe(&ring);
+    io_uring_prep_accept(sqe, server_fd, NULL, NULL, 0);
+    request_t *req = malloc(sizeof(request_t));
+    req->event_type = EVENT_TYPE_ACCEPT;
+    io_uring_sqe_set_data(sqe, req);
+    io_uring_submit(&ring);
+}
+
+#define READ_SIZE 8192
+void request_read(int client_fd) {
+    struct io_uring_sqe *sqe = io_uring_get_sqe(&ring);
+    request_t *req = malloc(sizeof(request_t) + sizeof(struct iovec));
+    req->iov[0].iov_base = malloc(READ_SIZE);
+    req->iov[0].iov_len = READ_SIZE;
+    req->event_type = EVENT_TYPE_READ;
+    req->client_fd = client_fd;
+    memset(req->iov[0].iov_base, 0, READ_SIZE);
+    /* Linux kernel 5.5 has support for readv, but not for recv() or read() */
+    io_uring_prep_readv(sqe, client_fd, &req->iov[0], 1, 0);
+    io_uring_sqe_set_data(sqe, req);
+    io_uring_submit(&ring);
+}
+
+void request_write(request_t *req) {
+    struct io_uring_sqe *sqe = io_uring_get_sqe(&ring);
+    req->event_type = EVENT_TYPE_WRITE;
+    io_uring_prep_writev(sqe, req->client_fd, req->iov, req->iovec_count, 0);
+    io_uring_sqe_set_data(sqe, req);
+    io_uring_submit(&ring);
+}
+
+void send_chunk(int client_fd, char *response) {
+    struct request *req = malloc(sizeof(*req) + sizeof(struct iovec));
+    unsigned long len = strlen(response);
+    req->iovec_count = 1;
+    req->client_fd = client_fd;
+    req->iov[0].iov_base = malloc(len);
+    req->iov[0].iov_len = len;
+    memcpy(req->iov[0].iov_base, response, len);
+    request_write(req);
+}
+
+
+void uring_sendfile(int fd, off_t file_size, struct iovec *iov) {
+    char *buf = malloc(file_size + 1);
+    buf[file_size] = '\0';
+
+    /* We should really check for short reads here */
+    int ret = read(fd, buf, file_size);
+    if (ret < file_size) {
+        fprintf(stderr, "Encountered a short read (%d vs %lu).\n", ret, file_size);
     }
+
+    iov->iov_base = buf;
+    iov->iov_len = file_size;
+}
+
+void handle_client(request_t *req) {
+    char *method = NULL;
+    char *method_end = NULL;
+    char *path = NULL;
+    size_t path_size = -1;
+
+    char *recvbuf = req->iov[0].iov_base;
+    size_t len = req->iov[0].iov_len;
+
+    recvbuf[len - 1] = '\0';
+    for (char *tmp = recvbuf; *tmp; tmp++) {
+        if (!method && *tmp == ' ') {
+            method = recvbuf;
+            *tmp = '\0';
+            method_end = tmp;
+        } else if (!path && (*tmp == ' ' || *tmp == '\r' || *tmp == '\n')) {
+            path = method_end + 1;
+            *tmp = '\0';
+            path_size = tmp - path;
+            break;
+        }
+    }
+
+    //printf("method = '%s'\npath   = '%s'\n", method, path);
+
+    if (method && !path) {
+        //printf("  method && !path => err414\n");
+        // The path didn't fit in recvbuf, meaning it was too long.
+        send_chunk(req->client_fd, err414);
+        //close(req->client_fd);
+        return;
+    }
+
+    if (!method) {
+        //printf("method is empty\n");
+        return;
+    }
+
+    //printf("  method && path\n");
+
+    bool is_get = strncmp("GET", method, 4) == 0;
+    bool is_head = strncmp("HEAD", method, 5) == 0;
+    if (!is_get && !is_head) {
+        // Non-GET/HEAD requests get a 405 error.
+        send_chunk(req->client_fd, err405);
+        //close(req->client_fd);
+        return;
+    }
+
+    if (!path) {
+        printf("path is empty\n");
+        return;
+    }
+
+    bool ends_with_slash = path[path_size - 1] == '/';
+    if (ends_with_slash) {
+        // Return /:dir/index.html for /:dir/.
+        strncpy(path + path_size, "index.html", 11);
+        path_size += 10;
+    }
+
+    int file_fd = open(path, O_RDONLY); // Try to open path.
+    if (file_fd == -1) { // If opening it failed.
+        perror("open");
+        if (errno == ENOENT) // No such path - return 404.
+            send_chunk(req->client_fd, err404);
+        else // All other errors - return 500.
+            send_chunk(req->client_fd, err500);
+        //close(req->client_fd);
+        return;
+    }
+
+    struct stat st;
+    if (fstat(file_fd, &st)) { // Needed for catching /:dir.
+        perror("fstat");
+        close(file_fd);
+        send_chunk(req->client_fd, err500);
+        //close(req->client_fd);
+        return;
+    }
+
+    // Redirect headers are 67 bytes longer than the path, plus need a null byte.
+    char *sendbuf = malloc(MAX_PATH_SIZE + 68);
+
+    // Redirect /:dir to /:dir/.
+    if (!ends_with_slash && S_ISDIR(st.st_mode)) {
+        close(file_fd);
+        snprintf(sendbuf, sizeof sendbuf,
+                "HTTP/1.1 307 Temporary Redirect\r\n" \
+                "Location: %s/\r\n" \
+                "Content-Length: 0\r\n" \
+                "\r\n",
+                path);
+        send_chunk(req->client_fd, sendbuf);
+        close(file_fd);
+        //close(req->client_fd);
+        return;
+    }
+
+    char *content_type = "application/octet-stream";
+
+    char *ext = strchr(path, '.');
+    if (ext) {
+        for (size_t i = 0; i < sizeof(exts); i++) {
+            if (strcmp(exts[i], ext) == 0) {
+                content_type = exts[i] + EXT_OFFSET;
+                break;
+            }
+        }
+    }
+
+    uint64_t content_length = st.st_size;
+    snprintf(sendbuf, 256,
+            "HTTP/1.1 200 OK\r\n" \
+            "Content-Type: %s\r\n" \
+            "Content-Length: %lu\r\n" \
+            "Connection: close\r\n" \
+            "Server: chttpd <https://github.com/duckinator/chttpd>\r\n" \
+            "\r\n",
+            content_type, content_length);
+
+    //setcork(req->client_fd, 1); // put a cork in it
+
+    send_chunk(req->client_fd, sendbuf);
+
+    // For HEAD requests, only return the headers.
+    if (is_get) {
+        //sendfile(fd, file_fd, NULL, content_length);
+        req->iovec_count += 1;
+        req = realloc(req, sizeof(request_t) * (sizeof(struct iovec) * req->iovec_count));
+        uring_sendfile(file_fd, content_length, &(req->iov[req->iovec_count - 1]));
+    }
+
+    request_write(req);
+
+    close(file_fd);
+    //close(req->client_fd);
 }
 
 int main(int argc, char *argv[]) {
-    int epoll_fd = epoll_create1(0);
-    LOG("Got epoll_fd.");
-
-    if (epoll_fd == -1)
-        pabort("epoll_create1");
-
     int server_fd = server_socket();
     LOG("Got server socket.");
 
     register_signal_handler();
     LOG("Registered signal handlers.");
 
-    struct epoll_event events[MAX_EVENTS] = {0};
-    watch_socket(epoll_fd, server_fd);
-    LOG("Watching server_fd.");
-
     reroot("site");
     LOG("Theoretically isolated ./site as process mount root.");
 
-    // we need to be able to read `HEAD <MAX_PATH_SIZE path> ` plus a null byte.
-    char recvbuf[MAX_PATH_SIZE + 7] = {0};
-    // Redirect headers are 67 bytes longer than the path, plus need a null byte.
-    char sendbuf[MAX_PATH_SIZE + 68] = {0};
+    struct io_uring_cqe *cqe;
+    #define QUEUE_DEPTH 256
+    io_uring_queue_init(QUEUE_DEPTH, &ring, 0);
+
+    request_accept(server_fd);
+
     while (!done) {
-        int num_events = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
-        if (num_events < 0) {
-            perror("epoll_wait");
-            if (errno == EINTR)
-                continue; // This can happen when attaching gdb.
+        int ret = io_uring_wait_cqe(&ring, &cqe);
+        if (ret < 0)
+            pabort("io_uring_wait_cqe");
+
+        struct request *req = (struct request*)cqe->user_data;
+
+        if (cqe->res < 0) {
+/*            fprintf(stderr, "Async request failed: %s for event: %d\n",
+                    strerror(-cqe->res), req->event_type);*/
+            //continue;
+        }
+
+        switch (req->event_type) {
+        case EVENT_TYPE_ACCEPT:
+            request_accept(server_fd);
+            request_read(cqe->res);
+            break;
+        case EVENT_TYPE_READ:
+            if (cqe->res) {
+                handle_client(req);
+                request_write(req);
+                //free(req->iov[0].iov_base);
+            }
+            break;
+        case EVENT_TYPE_WRITE:
+            /*for (int i = 0; i < req->iovec_count; i++) {
+                if (req->iov[i].iov_base)
+                    free(req->iov[i].iov_base);
+            }*/
+            close(req->client_fd);
+            break;
+        default:
+            fprintf(stderr, "Unknown event type: %d\n", req->event_type);
             break;
         }
 
-        for (size_t i = 0; i < num_events; i++) {
-            if ((events[i].events & EPOLLERR) ||
-                (events[i].events & EPOLLHUP) ||
-                (!(events[i].events & EPOLLIN))) {
-                perror("epoll_wait");
-                close(events[i].data.fd);
-                continue;
-            }
+        //if (req)
+        //    free(req);
 
-            if (server_fd == events[i].data.fd) {
-                while (true) {
-                    int client_fd = accept(server_fd, NULL, NULL);
-                    if (client_fd == -1) {
-                        // EAGAIN/EWOULDBLOCK aren't actual errors, so
-                        // be quiet about it.
-                        if ((errno != EAGAIN) && (errno != EWOULDBLOCK))
-                            perror("accept");
-                        break;
-                    }
-
-                    if (fcntl(client_fd, F_SETFL, O_NONBLOCK) == -1) {
-                        perror("fcntl");
-                        close(client_fd);
-                        break;
-                    }
-
-                    watch_socket(epoll_fd, client_fd);
-                }
-                continue;
-            }
-
-            while (true) {
-                ssize_t count = read(events[i].data.fd, recvbuf, sizeof recvbuf - 1);
-                recvbuf[sizeof(recvbuf) - 1] = '\0';
-
-                if (count == 0 || count == -1) { // 0 = EOF, -1 = error
-                    if (count == -1 && errno != 0 && errno != EAGAIN && errno != EBADF) {
-                        // if count == -1, read() failed.
-                        // we don't care about the following errno values:
-                        // - 0      (there was no error)
-                        // - EAGAIN ("resource temporarily unavailable"
-                        // - EBADF  ("bad file descriptor")
-                        perror("read");
-                    }
-                    close(events[i].data.fd);
-                    break;
-                }
-
-                char *method = NULL;
-                char *method_end = NULL;
-                char *path = NULL;
-                size_t path_size = -1;
-
-                for (char *tmp = recvbuf; *tmp; tmp++) {
-                    if (!method && *tmp == ' ') {
-                        method = recvbuf;
-                        *tmp = '\0';
-                        method_end = tmp;
-                    } else if (!path && (*tmp == ' ' || *tmp == '\r')) {
-                        path = method_end + 1;
-                        *tmp = '\0';
-                        path_size = tmp - path;
-                        break;
-                    }
-                }
-
-                if (method && !path) {
-                    // The path didn't fit in recvbuf, meaning it was too long.
-                    send_chunk(events[i].data.fd, err414);
-                    close(events[i].data.fd);
-                    continue;
-                }
-
-                if (!method || !path)
-                    continue;
-
-                bool is_get = strncmp("GET", method, 4) == 0;
-                bool is_head = strncmp("HEAD", method, 5) == 0;
-                if (!is_get && !is_head) {
-                    // Non-GET/HEAD requests get a 405 error.
-                    send_chunk(events[i].data.fd, err405);
-                    close(events[i].data.fd);
-                    continue;
-                }
-
-                if (!path)
-                    continue;
-
-                // GET or HEAD request.
-                int fd = events[i].data.fd;
-
-                bool ends_with_slash = path[path_size - 1] == '/';
-                if (ends_with_slash) {
-                    // Return /:dir/index.html for /:dir/.
-                    strncpy(path + path_size, "index.html", 11);
-                    path_size += 10;
-                }
-
-                int file_fd = open(path, O_RDONLY); // Try to open path.
-                if (file_fd == -1) { // If opening it failed.
-                    perror("open");
-                    if (errno == ENOENT) // No such path - return 404.
-                        send_chunk(fd, err404);
-                    else // All other errors - return 500.
-                        send_chunk(fd, err500);
-                    close(fd);
-                    continue;
-                }
-
-                struct stat st;
-                if (fstat(file_fd, &st)) { // Needed for catching /:dir.
-                    perror("fstat");
-                    close(file_fd);
-                    send_chunk(fd, err500);
-                    close(fd);
-                    continue;
-                }
-
-                // Redirect /:dir to /:dir/.
-                if (!ends_with_slash && S_ISDIR(st.st_mode)) {
-                    close(file_fd);
-                    snprintf(sendbuf, sizeof sendbuf,
-                            "HTTP/1.1 307 Temporary Redirect\r\n" \
-                            "Location: %s/\r\n" \
-                            "Content-Length: 0\r\n" \
-                            "\r\n",
-                            path);
-                    send_chunk(fd, sendbuf);
-                    close(fd);
-                    continue;
-                }
-
-                char *content_type = "application/octet-stream";
-
-                char *ext = strchr(path, '.');
-                if (ext) {
-                    for (size_t i = 0; i < sizeof(exts); i++) {
-                        if (strcmp(exts[i], ext) == 0) {
-                            content_type = exts[i] + EXT_OFFSET;
-                            break;
-                        }
-                    }
-                }
-
-                uint64_t content_length = st.st_size;
-                snprintf(sendbuf, 256,
-                        "HTTP/1.1 200 OK\r\n" \
-                        "Content-Type: %s\r\n" \
-                        "Content-Length: %lu\r\n" \
-                        "Connection: close\r\n" \
-                        "Server: chttpd <https://github.com/duckinator/chttpd>\r\n" \
-                        "\r\n",
-                        content_type, content_length);
-
-                setcork(fd, 1); // put a cork in it
-
-                send_chunk(fd, sendbuf);
-
-                // For HEAD requests, only return the headers.
-                if (is_get)
-                    sendfile(fd, file_fd, NULL, content_length);
-
-                setcork(fd, 0); // release it all
-
-                close(file_fd);
-                close(fd);
-            } // while (true)
-        }
+        // Mark request as processed.
+        io_uring_cqe_seen(&ring, cqe);
     }
 
     LOG("Closing server socket.");
     close(server_fd);
-
-    LOG("Closing epoll socket.");
-    close(epoll_fd);
 
     return EXIT_SUCCESS;
 }
