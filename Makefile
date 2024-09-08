@@ -18,6 +18,9 @@ stress:
 	@# -t => connection timeout
 	oha -n 100000000 -t 500ms --wait-ongoing-requests-after-deadline --disable-keepalive http://127.0.0.1:8080
 
+slight-stress:
+	oha -n 500000 -t 500ms --wait-ongoing-requests-after-deadline --disable-keepalive http://127.0.0.1:8080/
+
 clean:
 	rm -f ${EXE}
 
