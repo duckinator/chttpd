@@ -238,15 +238,14 @@ int main(int argc, char *argv[]) {
                     }
                 }
 
-                if (method && !path) {
-                    // The path didn't fit in recvbuf, meaning it was too long.
-                    send_chunk(events[i].data.fd, err414);
-                    close(events[i].data.fd);
+                if (!path) {
+                    if (method) {
+                        // The path didn't fit in recvbuf, meaning it was too long.
+                        send_chunk(events[i].data.fd, err414);
+                        close(events[i].data.fd);
+                    }
                     continue;
                 }
-
-                if (!method || !path)
-                    continue;
 
                 bool is_get = strncmp("GET", method, 4) == 0;
                 bool is_head = strncmp("HEAD", method, 5) == 0;
