@@ -173,15 +173,15 @@ int main(int argc, char *argv[]) {
         }
 
         for (size_t i = 0; i < num_events; i++) {
-            if ((events[i].events & EPOLLERR) ||
-                (events[i].events & EPOLLHUP) ||
-                (!(events[i].events & EPOLLIN))) {
+            int fd = events[i].data.fd;
+
+            if (!(events[i].events & EPOLLIN)) {
                 perror("epoll_wait");
-                close(events[i].data.fd);
+                close(fd);
                 continue;
             }
 
-            if (server_fd == events[i].data.fd) {
+            if (server_fd == fd) {
                 while (true) {
                     int client_fd = accept(server_fd, NULL, NULL);
                     if (client_fd == -1) {
@@ -203,7 +203,7 @@ int main(int argc, char *argv[]) {
                 continue;
             }
 
-            ssize_t count = read(events[i].data.fd, recvbuf, sizeof recvbuf - 1);
+            ssize_t count = read(fd, recvbuf, sizeof recvbuf - 1);
             recvbuf[sizeof(recvbuf) - 1] = '\0';
 
             if (count == 0 || count == -1) { // 0 = EOF, -1 = error
@@ -215,7 +215,7 @@ int main(int argc, char *argv[]) {
                     // - EBADF  ("bad file descriptor")
                     perror("read");
                 }
-                close(events[i].data.fd);
+                close(fd);
                 break;
             }
 
@@ -240,8 +240,8 @@ int main(int argc, char *argv[]) {
             if (!path) {
                 if (method) {
                     // The path didn't fit in recvbuf, meaning it was too long.
-                    send_chunk(events[i].data.fd, err414);
-                    close(events[i].data.fd);
+                    send_chunk(fd, err414);
+                    close(fd);
                 }
                 continue;
             }
@@ -250,8 +250,8 @@ int main(int argc, char *argv[]) {
             bool is_head = strncmp("HEAD", method, 5) == 0;
             if (!is_get && !is_head) {
                 // Non-GET/HEAD requests get a 405 error.
-                send_chunk(events[i].data.fd, err405);
-                close(events[i].data.fd);
+                send_chunk(fd, err405);
+                close(fd);
                 continue;
             }
 
@@ -259,7 +259,6 @@ int main(int argc, char *argv[]) {
                 continue;
 
             // GET or HEAD request.
-            int fd = events[i].data.fd;
 
             bool ends_with_slash = path[path_size - 1] == '/';
             if (ends_with_slash) {
@@ -339,7 +338,7 @@ int main(int argc, char *argv[]) {
             // Read the rest of the request to avoid "connection reset by peer."
             if (count < sizeof(recvbuf))
                 for (count = 1; count > 0;)
-                    count = read(events[i].data.fd, recvbuf, sizeof recvbuf - 1);
+                    count = read(fd, recvbuf, sizeof recvbuf - 1);
 
             close(fd);
         }
