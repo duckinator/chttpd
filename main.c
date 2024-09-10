@@ -34,6 +34,10 @@ char *exts[] = {
     ".json\0    application/json",
     ".txt\0     text/plain",
     ".woff\0    font/woff",
+    ".jpeg\0    image/jpeg",
+    ".jpg\0     image/jpeg",
+    ".png\0     image/png",
+    ".webm\0    video/webm",
 };
 
 #define MAX_EVENTS 10
