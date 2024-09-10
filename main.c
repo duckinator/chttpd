@@ -203,147 +203,145 @@ int main(int argc, char *argv[]) {
                 continue;
             }
 
-            while (true) {
-                ssize_t count = read(events[i].data.fd, recvbuf, sizeof recvbuf - 1);
-                recvbuf[sizeof(recvbuf) - 1] = '\0';
+            ssize_t count = read(events[i].data.fd, recvbuf, sizeof recvbuf - 1);
+            recvbuf[sizeof(recvbuf) - 1] = '\0';
 
-                if (count == 0 || count == -1) { // 0 = EOF, -1 = error
-                    if (count == -1 && errno != 0 && errno != EAGAIN && errno != EBADF) {
-                        // if count == -1, read() failed.
-                        // we don't care about the following errno values:
-                        // - 0      (there was no error)
-                        // - EAGAIN ("resource temporarily unavailable"
-                        // - EBADF  ("bad file descriptor")
-                        perror("read");
-                    }
-                    close(events[i].data.fd);
+            if (count == 0 || count == -1) { // 0 = EOF, -1 = error
+                if (count == -1 && errno != 0 && errno != EAGAIN && errno != EBADF) {
+                    // if count == -1, read() failed.
+                    // we don't care about the following errno values:
+                    // - 0      (there was no error)
+                    // - EAGAIN ("resource temporarily unavailable"
+                    // - EBADF  ("bad file descriptor")
+                    perror("read");
+                }
+                close(events[i].data.fd);
+                break;
+            }
+
+            char *method = NULL;
+            char *method_end = NULL;
+            char *path = NULL;
+            size_t path_size = -1;
+
+            for (char *tmp = recvbuf; *tmp; tmp++) {
+                if (!method && *tmp == ' ') {
+                    method = recvbuf;
+                    *tmp = '\0';
+                    method_end = tmp;
+                } else if (!path && (*tmp == ' ' || *tmp == '\r')) {
+                    path = method_end + 1;
+                    *tmp = '\0';
+                    path_size = tmp - path;
                     break;
                 }
+            }
 
-                char *method = NULL;
-                char *method_end = NULL;
-                char *path = NULL;
-                size_t path_size = -1;
+            if (!path) {
+                if (method) {
+                    // The path didn't fit in recvbuf, meaning it was too long.
+                    send_chunk(events[i].data.fd, err414);
+                    close(events[i].data.fd);
+                }
+                continue;
+            }
 
-                for (char *tmp = recvbuf; *tmp; tmp++) {
-                    if (!method && *tmp == ' ') {
-                        method = recvbuf;
-                        *tmp = '\0';
-                        method_end = tmp;
-                    } else if (!path && (*tmp == ' ' || *tmp == '\r')) {
-                        path = method_end + 1;
-                        *tmp = '\0';
-                        path_size = tmp - path;
+            bool is_get = strncmp("GET", method, 4) == 0;
+            bool is_head = strncmp("HEAD", method, 5) == 0;
+            if (!is_get && !is_head) {
+                // Non-GET/HEAD requests get a 405 error.
+                send_chunk(events[i].data.fd, err405);
+                close(events[i].data.fd);
+                continue;
+            }
+
+            if (!path)
+                continue;
+
+            // GET or HEAD request.
+            int fd = events[i].data.fd;
+
+            bool ends_with_slash = path[path_size - 1] == '/';
+            if (ends_with_slash) {
+                // Return /:dir/index.html for /:dir/.
+                strncpy(path + path_size, "index.html", 11);
+                path_size += 10;
+            }
+
+            int file_fd = open(path, O_RDONLY); // Try to open path.
+            if (file_fd == -1) { // If opening it failed.
+                perror("open");
+                if (errno == ENOENT) // No such path - return 404.
+                    send_chunk(fd, err404);
+                else // All other errors - return 500.
+                    send_chunk(fd, err500);
+                close(fd);
+                continue;
+            }
+
+            struct stat st;
+            if (fstat(file_fd, &st)) { // Needed for catching /:dir.
+                perror("fstat");
+                close(file_fd);
+                send_chunk(fd, err500);
+                close(fd);
+                continue;
+            }
+
+            // Redirect /:dir to /:dir/.
+            if (!ends_with_slash && S_ISDIR(st.st_mode)) {
+                close(file_fd);
+                snprintf(sendbuf, sizeof sendbuf,
+                        "HTTP/1.1 307 Temporary Redirect\r\n" \
+                        "Location: %s/\r\n" \
+                        "Content-Length: 0\r\n" \
+                        "\r\n",
+                        path);
+                send_chunk(fd, sendbuf);
+                close(fd);
+                continue;
+            }
+
+            char *content_type = "application/octet-stream";
+
+            char *ext = strchr(path, '.');
+            if (ext) {
+                for (size_t i = 0; i < (sizeof(exts) / sizeof(char*)); i++) {
+                    if (strcmp(exts[i], ext) == 0) {
+                        content_type = exts[i] + EXT_OFFSET;
                         break;
                     }
                 }
+            }
 
-                if (!path) {
-                    if (method) {
-                        // The path didn't fit in recvbuf, meaning it was too long.
-                        send_chunk(events[i].data.fd, err414);
-                        close(events[i].data.fd);
-                    }
-                    continue;
-                }
+            uint64_t content_length = st.st_size;
+            snprintf(sendbuf, 256,
+                    "HTTP/1.1 200 OK\r\n" \
+                    "Content-Type: %s\r\n" \
+                    "Content-Length: %lu\r\n" \
+                    "Connection: close\r\n" \
+                    "Server: chttpd <https://github.com/duckinator/chttpd>\r\n" \
+                    "\r\n",
+                    content_type, content_length);
 
-                bool is_get = strncmp("GET", method, 4) == 0;
-                bool is_head = strncmp("HEAD", method, 5) == 0;
-                if (!is_get && !is_head) {
-                    // Non-GET/HEAD requests get a 405 error.
-                    send_chunk(events[i].data.fd, err405);
-                    close(events[i].data.fd);
-                    continue;
-                }
+            setcork(fd, 1); // put a cork in it
 
-                if (!path)
-                    continue;
+            send_chunk(fd, sendbuf);
 
-                // GET or HEAD request.
-                int fd = events[i].data.fd;
+            // For HEAD requests, only return the headers.
+            if (is_get)
+                sendfile(fd, file_fd, NULL, content_length);
 
-                bool ends_with_slash = path[path_size - 1] == '/';
-                if (ends_with_slash) {
-                    // Return /:dir/index.html for /:dir/.
-                    strncpy(path + path_size, "index.html", 11);
-                    path_size += 10;
-                }
+            setcork(fd, 0); // release it all
 
-                int file_fd = open(path, O_RDONLY); // Try to open path.
-                if (file_fd == -1) { // If opening it failed.
-                    perror("open");
-                    if (errno == ENOENT) // No such path - return 404.
-                        send_chunk(fd, err404);
-                    else // All other errors - return 500.
-                        send_chunk(fd, err500);
-                    close(fd);
-                    continue;
-                }
+            close(file_fd);
 
-                struct stat st;
-                if (fstat(file_fd, &st)) { // Needed for catching /:dir.
-                    perror("fstat");
-                    close(file_fd);
-                    send_chunk(fd, err500);
-                    close(fd);
-                    continue;
-                }
+            // Read the rest of the request to avoid "connection reset by peer."
+            if (count < sizeof(recvbuf))
+                for (count = 1; count > 0;)
+                    count = read(events[i].data.fd, recvbuf, sizeof recvbuf - 1);
 
-                // Redirect /:dir to /:dir/.
-                if (!ends_with_slash && S_ISDIR(st.st_mode)) {
-                    close(file_fd);
-                    snprintf(sendbuf, sizeof sendbuf,
-                            "HTTP/1.1 307 Temporary Redirect\r\n" \
-                            "Location: %s/\r\n" \
-                            "Content-Length: 0\r\n" \
-                            "\r\n",
-                            path);
-                    send_chunk(fd, sendbuf);
-                    close(fd);
-                    continue;
-                }
-
-                char *content_type = "application/octet-stream";
-
-                char *ext = strchr(path, '.');
-                if (ext) {
-                    for (size_t i = 0; i < (sizeof(exts) / sizeof(char*)); i++) {
-                        if (strcmp(exts[i], ext) == 0) {
-                            content_type = exts[i] + EXT_OFFSET;
-                            break;
-                        }
-                    }
-                }
-
-                uint64_t content_length = st.st_size;
-                snprintf(sendbuf, 256,
-                        "HTTP/1.1 200 OK\r\n" \
-                        "Content-Type: %s\r\n" \
-                        "Content-Length: %lu\r\n" \
-                        "Connection: close\r\n" \
-                        "Server: chttpd <https://github.com/duckinator/chttpd>\r\n" \
-                        "\r\n",
-                        content_type, content_length);
-
-                setcork(fd, 1); // put a cork in it
-
-                send_chunk(fd, sendbuf);
-
-                // For HEAD requests, only return the headers.
-                if (is_get)
-                    sendfile(fd, file_fd, NULL, content_length);
-
-                setcork(fd, 0); // release it all
-
-                close(file_fd);
-
-                // Read the rest of the request to avoid "connection reset by peer."
-                if (count < sizeof(recvbuf))
-                    for (count = 1; count > 0;)
-                        count = read(events[i].data.fd, recvbuf, sizeof recvbuf - 1);
-
-                close(fd);
-            } // while (true)
+            close(fd);
         }
     }
 
