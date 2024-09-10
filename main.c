@@ -29,15 +29,15 @@ char *exts[] = {
     // ext[n] = extension
     // (ext + n + EXT_OFFSET) = mime type
     //2345 67890
-    ".html\0    text/html",
     ".css\0     text/css",
-    ".json\0    application/json",
-    ".txt\0     text/plain",
-    ".woff\0    font/woff",
+    ".html\0    text/html",
     ".jpeg\0    image/jpeg",
     ".jpg\0     image/jpeg",
+    ".json\0    application/json",
     ".png\0     image/png",
+    ".txt\0     text/plain",
     ".webm\0    video/webm",
+    ".woff\0    font/woff",
 };
 
 #define MAX_EVENTS 10
