@@ -306,7 +306,7 @@ int main(int argc, char *argv[]) {
 
                 char *ext = strchr(path, '.');
                 if (ext) {
-                    for (size_t i = 0; i < sizeof(exts); i++) {
+                    for (size_t i = 0; i < (sizeof(exts) / sizeof(char*)); i++) {
                         if (strcmp(exts[i], ext) == 0) {
                             content_type = exts[i] + EXT_OFFSET;
                             break;
