@@ -21,8 +21,8 @@ static char err414[] = "HTTP/1.1 414 URI Too Long\r\nContent-Type: text/plain\r\
 static char err405[] = "HTTP/1.1 405 Method Not Allowed\r\nAllow: GET\r\nContent-Type: text/plain\r\nContent-Length: 37\r\n\r\nOnly GET/HEAD requests are allowed.\r\n";
 static char err500[] = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: 40\r\n\r\nAn internal server error has occurred.\r\n";
 
-// Maximum length of a request path.
-#define MAX_PATH_SIZE 512
+// Size of send and receive buffers, in bytes.
+#define BUF_SIZE (1024 * 1024 * 1)
 
 #define EXT_OFFSET 10
 char *exts[] = {
@@ -161,10 +161,8 @@ int main(int argc, char *argv[]) {
     reroot("site");
     LOG("Theoretically isolated ./site as process mount root.");
 
-    // we need to be able to read `HEAD <MAX_PATH_SIZE path> ` plus a null byte.
-    char recvbuf[MAX_PATH_SIZE + 7] = {0};
-    // Redirect headers are 67 bytes longer than the path, plus need a null byte.
-    char sendbuf[MAX_PATH_SIZE + 68] = {0};
+    char recvbuf[BUF_SIZE] = {0};
+    char sendbuf[BUF_SIZE] = {0};
     while (!done) {
         int num_events = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
         if (num_events < 0) {
@@ -339,6 +337,11 @@ int main(int argc, char *argv[]) {
                 setcork(fd, 0); // release it all
 
                 close(file_fd);
+
+                // Read the rest of the request to avoid "connection reset by peer."
+                for (count = 1; count <= 0;)
+                    count = read(events[i].data.fd, recvbuf, sizeof recvbuf - 1);
+
                 close(fd);
             } // while (true)
         }
