@@ -339,8 +339,9 @@ int main(int argc, char *argv[]) {
                 close(file_fd);
 
                 // Read the rest of the request to avoid "connection reset by peer."
-                for (count = 1; count <= 0;)
-                    count = read(events[i].data.fd, recvbuf, sizeof recvbuf - 1);
+                if (count < sizeof(recvbuf))
+                    for (count = 1; count > 0;)
+                        count = read(events[i].data.fd, recvbuf, sizeof recvbuf - 1);
 
                 close(fd);
             } // while (true)
