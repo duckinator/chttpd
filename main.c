@@ -169,7 +169,7 @@ int main(int argc, char *argv[]) {
             perror("epoll_wait");
             if (errno == EINTR)
                 continue; // This can happen when attaching gdb.
-            break;
+            continue;
         }
 
         for (size_t i = 0; i < num_events; i++) {
