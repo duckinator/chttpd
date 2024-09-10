@@ -161,8 +161,8 @@ int main(int argc, char *argv[]) {
     reroot("site");
     LOG("Theoretically isolated ./site as process mount root.");
 
-    char recvbuf[BUF_SIZE] = {0};
-    char sendbuf[BUF_SIZE] = {0};
+    static char recvbuf[BUF_SIZE] = {0};
+    static char sendbuf[BUF_SIZE] = {0};
     while (!done) {
         int num_events = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
         if (num_events < 0) {
