@@ -314,7 +314,7 @@ int main(int argc, char *argv[]) {
             }
 
             uint64_t content_length = st.st_size;
-            snprintf(sendbuf, 256,
+            snprintf(sendbuf, sizeof sendbuf,
                     "HTTP/1.1 200 OK\r\n" \
                     "Content-Type: %s\r\n" \
                     "Content-Length: %lu\r\n" \
