@@ -328,8 +328,11 @@ int main(int argc, char *argv[]) {
             send_chunk(fd, sendbuf);
 
             // For HEAD requests, only return the headers.
-            if (is_get)
-                sendfile(fd, file_fd, NULL, content_length);
+            if (is_get) {
+                for (off_t offset = 0; offset < content_length;)
+                    if (sendfile(fd, file_fd, &offset, content_length) <= 0)
+                        break;
+            }
 
             setcork(fd, 0); // release it all
 
