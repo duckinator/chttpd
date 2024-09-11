@@ -330,8 +330,11 @@ int main(int argc, char *argv[]) {
             // For HEAD requests, only return the headers.
             if (is_get) {
                 for (off_t offset = 0; offset < content_length;)
-                    if (sendfile(fd, file_fd, &offset, content_length) <= 0)
+                    if (sendfile(fd, file_fd, &offset, content_length) == -1 &&
+                            errno != EAGAIN) {
+                        perror("sendfile");
                         break;
+                    }
             }
 
             setcork(fd, 0); // release it all
