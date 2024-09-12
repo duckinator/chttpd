@@ -251,9 +251,6 @@ int main(int argc, char *argv[]) {
                 continue;
             }
 
-            if (!path)
-                continue;
-
             // GET or HEAD request.
 
             bool ends_with_slash = path[path_size - 1] == '/';
