@@ -1,13 +1,18 @@
-CFLAGS := -std=c2x -Wall -Werror -pedantic-errors -D_DEFAULT_SOURCE -g
+CC ?= clang
+CFLAGS := -std=c2x -Wall -Werror -pedantic-errors -D_DEFAULT_SOURCE -g ${CFLAGS}
 EXE := ./chttpd
 
 all: ${EXE}
 
 ${EXE}: main.c
-	clang ${CFLAGS} main.c -o ${EXE}
+	${CC} ${CFLAGS} main.c -o ${EXE}
 
-debug: ${EXE}
-	clang -DDEBUG_MODE=1 ${CFLAGS} main.c -o ${EXE}
+msan:
+	$(MAKE) clean all CFLAGS="-fsanitize=memory -fno-omit-frame-pointer"
+	${EXE}
+
+ubsan:
+	$(MAKE) clean all CFLAGS="-fsanitize=undefined"
 	${EXE}
 
 run: ${EXE}
