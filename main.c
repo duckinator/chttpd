@@ -1,6 +1,5 @@
 #include <arpa/inet.h>
 #include <errno.h>
-#include <fcntl.h>
 #include <linux/sched.h>    // CLONE_* constants.
 #include <netinet/tcp.h>
 #include <signal.h>
@@ -11,7 +10,6 @@
 #include <sys/epoll.h>
 #include <sys/mount.h>      // mount(), MS_* constants.
 #include <sys/sendfile.h>
-#include <sys/socket.h>
 #include <sys/stat.h>       // fstat(), struct stat.
 #include <sys/syscall.h>    // SYS_* constants.
 #include <unistd.h>         // syscall(), maybe other things.
