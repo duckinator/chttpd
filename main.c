@@ -3,7 +3,7 @@
 #include <linux/sched.h>    // CLONE_* constants.
 #include <netinet/tcp.h>
 #include <signal.h>
-#include <stdbool.h>
+#include <stdbool.h> // Can be removed when Debian defaults to Clang 15+.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
