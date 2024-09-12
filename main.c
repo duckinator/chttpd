@@ -167,8 +167,6 @@ int main(int argc, char *argv[]) {
         int num_events = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
         if (num_events < 0) {
             perror("epoll_wait");
-            if (errno == EINTR)
-                continue; // This can happen when attaching gdb.
             continue;
         }
 
