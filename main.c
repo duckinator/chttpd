@@ -159,7 +159,7 @@ int main(int argc, char *argv[]) {
     LOG("Watching server_fd.");
 
     reroot("site");
-    LOG("Theoretically isolated ./site as process mount root.");
+    LOG("Isolated ./site as process mount root.");
 
     static char recvbuf[BUF_SIZE] = {0};
     static char sendbuf[BUF_SIZE] = {0};
