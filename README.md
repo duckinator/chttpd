@@ -31,7 +31,7 @@ In theory it should work!
 
 System configuration:
 - Ryzen 5 7600
-- 32GB DDR5-5400 @ 4800 MT/s (chttpd uses less than 5MB on my system, though)
+- 32GB DDR5-5400 (chttpd uses less than 5MB on my system, though)
 - 2TB nvme SSD.
 
 Performance test for a large number of small requests:
